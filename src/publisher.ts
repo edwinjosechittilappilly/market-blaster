@@ -13,7 +13,7 @@ import { HttpError, UserError, type CampaignState, type Config, type Ctx, type D
 interface PublishOptions {
   config: Config; campaign: string; env: Env; io: IO;
   adapters: Record<DestinationId, Destination>; yes?: boolean; stage?: boolean; force?: boolean; open?: boolean;
-  only?: DestinationId[]; sleep?: (ms: number) => Promise<void>; crosspost?: Ctx["crosspost"];
+  only?: DestinationId[]; sleep?: (ms: number) => Promise<void>; crosspost?: Ctx["crosspost"]; json?: boolean;
 }
 
 function publishedUrls(state: CampaignState): Partial<Record<DestinationId, string>> {
@@ -36,13 +36,40 @@ function connectionRefused(err: unknown): boolean {
 }
 function uncertain(err: unknown): boolean {
   if (err instanceof UserError) return false;
-  return !(err instanceof HttpError && err.status >= 400 && err.status < 500 && err.status !== 429);
+  return !(err instanceof HttpError && err.status >= 400 && err.status < 500);
 }
 
 function retryDelay(err: unknown, attempt: number): number {
   const value = (err as { retryAfter?: string }).retryAfter;
   if (value && /^\d+(?:\.\d+)?$/.test(value)) return Math.min(30_000, Number(value) * 1000);
   return 100 * 2 ** attempt;
+}
+
+function previewText(text: string): string {
+  const lines = text.split("\n");
+  return lines.slice(0, 3).join("\n         ") + (lines.length > 3 ? ` … ${lines.length - 3} more lines` : "");
+}
+
+function handoffBlock(id: DestinationId, post: ResolvedPost, info: { url?: string; prefills: string }): string {
+  const url = info.url && (info.url.length > 100 ? `${info.url.slice(0, 99)}…` : info.url);
+  const prefills = info.prefills === "full" ? "full text" : info.prefills === "link" ? "link" : "nothing";
+  const ai = META[id].ai;
+  const text =
+    ai === "none" ? "(none: write it yourself; HN forbids generated text)"
+    : ai === "outline" ? `talking points, write the post yourself:\n         ${previewText(post.body)}`
+    : previewText(post.body);
+  const title = post.title ? `\n  title: ${post.title}` : "";
+  return `${id}  handoff  (compose link, prefills ${prefills})${title}\n  text:  ${text}${url ? `\n  open:  ${url}` : ""}`;
+}
+
+function apiBlock(id: DestinationId, post: ResolvedPost, payload: unknown, cost?: number): string {
+  const article = id === "devto" && payload && typeof payload === "object" && "article" in payload && payload.article && typeof payload.article === "object" ? payload.article : undefined;
+  const published = article && "published" in article && article.published === true;
+  const tags = article && "tags" in article ? article.tags : [];
+  const description = article ? `article, ${published ? "published" : "unpublished"} on DEV` : META[id].kind;
+  const fields = payload && typeof payload === "object" ? Object.keys(payload).join(", ") : "";
+  const sends = article ? `POST https://dev.to/api/articles  {title, body_markdown, published:${published}, tags:${JSON.stringify(tags)}}` : `request fields: {${fields}}`;
+  return `${id}  api  (${description})${cost === undefined ? "" : ` expected cost $${cost.toFixed(2)}`}${post.title ? `\n  title: ${post.title}` : ""}\n  text:  ${previewText(post.body)}\n  sends: ${sends}`;
 }
 
 export async function publishCampaign(opts: PublishOptions): Promise<number> {
@@ -88,8 +115,9 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
       const cost = mode === "api" ? adapter.cost?.(post) : undefined;
       try {
         const payload = mode === "handoff" ? adapter.handoff?.(post, ctx) : adapter.payload(post, ctx, { stage: !!opts.stage });
-        io.out(`${id}: ${mode}${cost === undefined ? "" : ` expected cost $${cost.toFixed(2)}`} text: ${post.body} payload: ${JSON.stringify(payload)}`);
-      } catch (err) { io.out(`${id}: error: ${(err as Error).message}`); failed = true; }
+        const output = opts.json ? JSON.stringify({ destination: id, mode, post, payload, ...(cost === undefined ? {} : { cost }) }) : mode === "handoff" ? handoffBlock(id, post, payload as { url?: string; prefills: string }) : apiBlock(id, post, payload, cost);
+        io.out(redact(output, env, ALL_ENV_VARS));
+      } catch (err) { io.out(`${id}: error: ${redact(String((err as Error).message ?? err), env, ALL_ENV_VARS)}`); failed = true; }
     }
     return failed ? 1 : 0;
   }
@@ -111,8 +139,8 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
   for (const id of eligible) {
     const draft = draftFor(id);
     if (id === "hn") {
-      draft.title = home && isDestinationId(home) ? state[home]?.title : config.hn?.title;
-      if (!draft.title) { io.out("hn: skipped: published home title unavailable; set hn.title for an external canonical home"); failed = true; continue; }
+      draft.title = home && isDestinationId(home) ? state[home]?.title ?? checked.drafts.get(home)?.title : config.hn?.title;
+      if (!draft.title) { io.out(home && !isDestinationId(home) ? "hn: skipped: canonical title unavailable; set hn.title" : "hn: skipped: canonical home draft title unavailable"); failed = true; continue; }
     }
     const entry = state[id];
     const adapter = adapters[id];
@@ -140,7 +168,7 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
           }
         }
         if (entry?.status !== "published") updateState(campaign, state, id, { status: "handoff", contentHash: post.contentHash, error: undefined });
-        io.out(`${id}: handoff (prefills ${info.prefills})${info.url ? ` ${info.url}` : ""} text: ${post.body}`);
+        io.out(redact(handoffBlock(id, post, info), env, ALL_ENV_VARS));
       } catch (err) { const error = redact(String((err as Error).message ?? err), env, ALL_ENV_VARS); updateState(campaign, state, id, { status: "failed", error }); io.out(`${id}: failed: ${error}`); failed = true; }
       continue;
     }

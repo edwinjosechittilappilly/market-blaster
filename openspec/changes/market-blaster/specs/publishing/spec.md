@@ -59,10 +59,11 @@ When `canonicalHome` names a destination or URL, every other long-form destinati
 - **THEN** the Hashnode request sets `originalArticleURL` to U
 
 ### Requirement: No duplicate posts
-Before each write the system SHALL record status `pending`, then `published` with id and URL on success, `failed` on an
-HTTP error, and `unknown` on a timeout or dropped connection. A destination `published` with the same hash SHALL be
-skipped. A destination in `unknown` SHALL be refused until `mblast mark` resolves it. Retries SHALL happen only on HTTP
-429 or connection refused.
+Before each write the system SHALL record status `pending`, then `published` with id and URL on success, `failed` when
+the platform definitely rejected the request (a 4xx response, or 429 after retries) or it was never sent, and `unknown`
+for any other error after the request started. A destination `published` with the same hash SHALL be skipped. A
+destination in `unknown` SHALL be refused until `mblast mark` resolves it. Retries SHALL happen only on HTTP 429 or
+connection refused.
 
 #### Scenario: Rerun after partial failure
 - **WHEN** devto is published and mastodon failed, then `publish --yes` runs again
@@ -94,10 +95,10 @@ a normal publish also records DEV as `staged`.
 - **THEN** no request is sent to Bluesky
 
 ### Requirement: Uncertain outcomes are never retried blindly
-Timeouts, dropped connections, gateway errors (502, 503, 504, 522, 524) and unparsable success bodies SHALL be recorded
-`unknown`; a failed or unknown update of a live article SHALL keep it `published` and record `lastAttempt`. Only HTTP
-429 (honouring `Retry-After`) and refused connections SHALL be retried, at most twice. Only one publish, approve or
-mark run per campaign SHALL hold the state lock at a time.
+Timeouts, dropped connections, 5xx responses, unparsable success bodies and any other error after the request started
+SHALL be recorded `unknown`; a failed or unknown update of a live article SHALL keep it `published` and record
+`lastAttempt`. Only HTTP 429 (honouring `Retry-After`) and refused connections SHALL be retried, at most twice; an
+exhausted 429 SHALL be `failed`. Only one publish, approve or mark run per campaign SHALL hold the state lock at a time.
 
 #### Scenario: Gateway timeout
 - **WHEN** Bluesky returns 504 to the create request
@@ -157,5 +158,9 @@ A failure on one destination SHALL NOT stop the others. Publish SHALL print one 
 is `failed`, `unknown` or `blocked`. `mblast status <slug>` SHALL print each destination's status, URL and time.
 
 #### Scenario: One platform down
-- **WHEN** mastodon returns HTTP 500 and the rest succeed
+- **WHEN** mastodon returns HTTP 422 and the rest succeed
 - **THEN** the others are published, mastodon is `failed` with the HTTP status, and the exit code is 1
+
+#### Scenario: Server error is uncertain
+- **WHEN** mastodon returns HTTP 500
+- **THEN** mastodon is `unknown`, because the post may have been created, and the next run refuses it until `mark`

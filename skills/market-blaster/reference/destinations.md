@@ -1,7 +1,7 @@
 # Destination reference
 
 ## devto
-Tutorial with code, context, tradeoffs and relevant tags. Title required, maximum 128 characters.
+Tutorial with code, context, tradeoffs and relevant tags. Title required, maximum 128 characters. Use at most four tags, each containing only lowercase letters and digits.
 
 ## hashnode
 Technical article with an example and context. Title required, maximum 250 characters.

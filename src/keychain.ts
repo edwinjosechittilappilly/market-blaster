@@ -17,8 +17,9 @@ export function keychainGet(key: string, runner: KeychainRunner = security, plat
   guardTestRunner(runner);
   try {
     return runner(["find-generic-password", "-s", "market-blaster", "-a", key, "-w"]).replace(/\r?\n$/, "") || undefined;
-  } catch {
-    return undefined;
+  } catch (err) {
+    if (typeof err === "object" && err !== null && "status" in err && err.status === 44) return undefined;
+    throw new UserError(`Could not read ${key} from Keychain`);
   }
 }
 
@@ -36,7 +37,3 @@ export function keychainSet(key: string, value: string, runner: KeychainRunner =
   }
 }
 
-export function keychainList(keys: string[], runner: KeychainRunner = security, platform = process.platform): string[] {
-  available(platform);
-  return keys.filter((key) => keychainGet(key, runner, platform) !== undefined);
-}

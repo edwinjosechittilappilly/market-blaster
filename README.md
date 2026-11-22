@@ -1,84 +1,107 @@
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="Market Blaster: ship a feature and announce it where developers read. Drafts grounded in your change, human approval, API publishing and handoffs, no browser automation, and credentials in Keychain." width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/edwinjosechittilappilly/market-blaster/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/edwinjosechittilappilly/market-blaster/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://edwinjosechittilappilly.github.io/market-blaster/"><img alt="Documentation" src="https://img.shields.io/badge/docs-online-087f8c"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <img alt="Works with omp, Claude Code and Codex" src="https://img.shields.io/badge/works%20with-omp%20%C2%B7%20Claude%20Code%20%C2%B7%20Codex-ff5a3c">
+  <img alt="Node 22.18 or newer" src="https://img.shields.io/badge/node-%3E%3D22.18-43853d">
+</p>
+
 # Market Blaster
 
-Ship a feature, then announce it everywhere developers read, with posts grounded in what you actually changed.
+Market Blaster turns a shipped change into platform-specific posts. It gathers evidence from a git range, PR and
+CHANGELOG, asks an agent to draft from that brief, and checks the results. You edit and approve each draft in your
+terminal before publishing through APIs or completing a manual handoff.
 
-`mblast` reads the shipped change: commits, diffs, the PR and the CHANGELOG. An AI agent drafts a post for each
-platform from that evidence. You approve the exact text in your terminal before anything is published. Platforms
-with no usable API get a compose link in your own browser, and you click Post yourself. Market Blaster never
-automates a website.
+## Quickstart
 
-| Destination | How it publishes |
-|---|---|
-| DEV, GitHub Gist, GitHub Discussions | API. Canonical URL and in-place updates |
-| Bluesky, Mastodon, Nostr | API. Link facets and cards on Bluesky; idempotency key on Mastodon |
-| LinkedIn | API through `mblast auth linkedin` (OAuth; renew about every 60 days), or a share link |
-| X, Threads | Intent link with the text prefilled (X API optional, billed per post) |
-| Hashnode | API, needs Hashnode Pro (off by default) |
-| Hacker News | Link and original title only. HN forbids generated text and automated posting, so you write any text yourself |
-| Reddit, Product Hunt, Lemmy, dev newsletters | Compose or submit link with AI talking points. You write the post |
-| Medium, Substack | Import or editor link with the draft copied |
-| DevHunt, AlternativeTo, Uneed, Indie Hackers | One-time project listings tracked by `mblast launch` |
+Requires Node 22.18+, git, access to this private repository, and a configured drafting agent. Install from a clone:
 
 ```bash
-mblast init                                          # once per project
-mblast auth set DEV_API_KEY                          # credentials go to the macOS Keychain
-mblast doctor --online                               # what publishes by API, what hands off
-mblast new my-feature --range v1.2.0..HEAD --pr 42   # evidence brief + AI drafts + check
-$EDITOR campaigns/my-feature/drafts/*.md             # make them yours
-mblast approve my-feature                            # interactive, hash-locked approval
-mblast publish my-feature                            # dry run: payloads, modes, cost
-mblast publish my-feature --yes                      # API destinations
-mblast publish my-feature --assist                   # walk through handoffs; records permalinks
+gh repo clone edwinjosechittilappilly/market-blaster
+cd market-blaster
+npm install
+npm link
+mblast install-skill
+```
+
+In the repository you want to announce:
+
+```bash
+mblast init
+# Edit market-blaster.yml: brand, destinations and agent.command
+mblast auth set DEV_API_KEY                      # macOS Keychain; use .env or shell elsewhere
+mblast new my-feature --range v1.2.0..HEAD       # add --pr 42 when available
+$EDITOR campaigns/my-feature/drafts/*.md
+mblast check my-feature
+mblast approve my-feature                        # interactive approval of each draft
+mblast publish my-feature                        # dry run
+mblast publish my-feature --yes                  # publish approved API destinations
+mblast publish my-feature --assist               # complete handoffs and record permalinks
 mblast status my-feature
 ```
 
-## Install
+`--assist` opens official pages for you to submit; it does not click Post. The example below uses a fake drafting agent
+and dummy DEV and Bluesky credentials. The final command is a dry run, so it sends nothing.
 
-```bash
-gh repo clone edwinjosechittilappilly/market-blaster && cd market-blaster
-npm install && npm link && mblast install-skill
-```
+<p align="center"><img src="docs/assets/demo.svg" alt="A terminal session creates a demo campaign, approves its drafts and previews API and handoff destinations without sending anything." width="100%"></p>
 
-Requires Node 22.18+. The [guide](docs/guide.md) covers each platform's credentials, the full workflow, recovery,
-launch directories and CI.
+## What goes where
 
-## Why it exists
+| Destination | Publishing mode and draft policy |
+|---|---|
+| DEV, GitHub Gist, GitHub Discussions | API; editable drafts |
+| Bluesky, Mastodon, Nostr | API; editable drafts |
+| LinkedIn | Share handoff, or opt-in API; editable draft |
+| X | Intent handoff, or opt-in paid API; editable draft |
+| Hashnode | API when configured; Hashnode Pro required |
+| Hacker News | Manual link and title only; no generated text |
+| Reddit, Product Hunt, Lemmy, newsletters | Manual submission; AI talking points only |
+| Threads, Medium, Substack | Manual compose, import or editor handoff; editable draft |
 
-The research compares existing skills, MCP servers and schedulers (Pipepost, content-distribution-mcp, Crosspost,
-Typefully, Postiz, Buffer): see [existing tools](docs/research/existing-skills-and-tools.md),
-[auth and access](docs/research/auth-and-access.md) and [free destinations](docs/research/free-destinations.md). They
-start from an article or a blank prompt. Market Blaster starts from the diff. Every draft cites `evidence:` anchors
-in the brief, and `check` flags numbers and identifiers that the brief doesn't contain.
+`mblast launch` tracks one-time directory submissions separately from campaigns.
+
+## Why not just use X?
+
+[Pipepost](https://github.com/MendleM/Pipepost) cross-publishes articles and generates social variants.
+[Typefully](https://typefully.com/), [Postiz](https://postiz.com/) and [Buffer](https://buffer.com/) focus on social
+publishing and scheduling. [Crosspost](https://github.com/humanwhocodes/crosspost) is a CLI, library and MCP for
+posting across networks. Market Blaster starts with a code change and an evidence-linked brief, then keeps drafts,
+terminal approvals and per-destination outcomes in local campaign files. See the
+[tool research](docs/research/existing-skills-and-tools.md) for the comparison and its limits.
 
 ## Safety
 
-- **Approval:** `publish` only posts content hashes that were approved in a terminal. The drafting agent runs in a
-  temporary workspace and sees no credentials and no project files.
-- **No browser automation:** LinkedIn, X, Threads and HN terms forbid scripting their sites
-  ([research](docs/research/browser-relay.md)). Handoffs open official compose URLs in your normal browser, so your
-  logins never leave it.
-- **No duplicates:**
-  - A timeout or a gateway error becomes `unknown` and blocks reposting until `mblast mark`.
-  - Articles update in place.
-  - A lock stops two publish runs from overlapping.
-- **AI policy per destination:** HN gets no generated text. Reddit, Product Hunt, Lemmy and newsletters get talking
-  points only.
+- Approval records a hash of the exact draft; a changed draft needs approval again before publishing.
+- The agent receives a temporary workspace and a filtered environment, not publishing credentials or the project
+  files. This is **not a security sandbox**: the agent runs as your user. Use your agent's sandbox where available.
+- API errors with an uncertain outcome block reposting until you resolve them with `mblast mark`. A lock prevents
+  overlapping publish runs.
+- There is no browser automation. HN gets a title and link; outline-only destinations require you to write the post.
+- macOS credentials can be stored in Keychain. Shell variables and a project `.env` are also supported.
 
-## Project layout
+## Documentation
 
-| Path | Contents |
-|---|---|
-| `src/commands/` | One file per CLI command |
-| `src/destinations/` | One adapter per platform behind a single `Destination` interface |
-| `skills/market-blaster/` | Drafting rules and per-destination reach guidance for the agent |
-| `docs/` | Research, design, the auth and reach plan, review notes, and the guide |
-| `openspec/` | Specs |
-
-Work is tracked in Beads. Run `slipway ui` to see the board.
+Read the [getting started guide](https://edwinjosechittilappilly.github.io/market-blaster/getting-started/),
+[commands](https://edwinjosechittilappilly.github.io/market-blaster/commands/),
+[configuration](https://edwinjosechittilappilly.github.io/market-blaster/configuration/),
+[destinations](https://edwinjosechittilappilly.github.io/market-blaster/destinations/) and
+[credentials](https://edwinjosechittilappilly.github.io/market-blaster/credentials/). The
+[full guide](docs/guide.md) is also available in this repository.
 
 ## Development
 
+Contributions are welcome. Install dependencies, then run:
+
 ```bash
-npm test            # node --test, no network
-npm run typecheck   # tsc --noEmit
+npm test
+npm run typecheck
+make docs-serve
 ```
+
+## License
+
+[MIT](LICENSE).

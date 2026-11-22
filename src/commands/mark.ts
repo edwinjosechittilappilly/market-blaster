@@ -1,5 +1,6 @@
 import { parseArgs } from "node:util";
 import { campaignDir, loadConfig } from "../config.ts";
+import { loadDrafts } from "../drafts.ts";
 import type { Command } from "../io.ts";
 import { isDestinationId } from "../links.ts";
 import { loadState, updateState, withStateLock } from "../state.ts";
@@ -25,7 +26,8 @@ export const run: Command = async (args, io) => {
     let url: URL;
     try { url = new URL(values.url!); } catch { throw new UserError("--url must be an http(s) URL"); }
     if (url.protocol !== "http:" && url.protocol !== "https:") throw new UserError("--url must be an http(s) URL");
-    updateState(campaign, state, id, { status: "published", url: values.url, contentHash: state[id]?.approvedHash ?? state[id]?.contentHash, error: undefined, lastAttempt: undefined });
+    const title = id === config.canonicalHome ? state[id]?.title ?? loadDrafts(campaign).get(id)?.title : state[id]?.title;
+    updateState(campaign, state, id, { status: "published", url: values.url, title, contentHash: state[id]?.approvedHash ?? state[id]?.contentHash, error: undefined, lastAttempt: undefined });
     io.out(`${id}: published ${values.url}`);
   }
   return 0;

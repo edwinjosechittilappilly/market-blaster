@@ -1,0 +1,103 @@
+site_name: Market Blaster
+site_description: Turn a shipped change into evidence-backed posts, reviewed by you before publication.
+site_url: https://edwinjosechittilappilly.github.io/market-blaster/
+repo_url: https://github.com/edwinjosechittilappilly/market-blaster
+repo_name: market-blaster
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  font:
+    text: IBM Plex Sans
+    code: IBM Plex Mono
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+
+extra_css:
+  - assets/site.css
+
+nav:
+  - Home: index.md
+  - Guide:
+      - Getting started: getting-started.md
+      - Announce a feature: announce.md
+      - Handoffs and --assist: handoffs.md
+      - Launch directories: launch.md
+      - Recovery: recovery.md
+      - CI: ci.md
+      - Complete guide: guide.md
+  - Reference:
+      - Commands: commands.md
+      - Configuration: configuration.md
+      - Destinations: destinations.md
+      - Credentials and security: credentials.md
+  - Architecture:
+      - Design: design/market-blaster.md
+      - Auth and reach plan: design/auth-and-reach.md
+      - Architecture diagram: architecture.md
+      - Comparison with alternatives: comparison.md
+      - Decisions:
+          - Runtime and Crosspost: adr/0001-runtime.md
+          - Handoffs: adr/0002-handoffs.md
+          - Keychain: adr/0003-keychain.md
+  - Research:
+      - Existing skills and tools: research/existing-skills-and-tools.md
+      - Platform APIs: research/platform-apis.md
+      - Auth and access: research/auth-and-access.md
+      - Browser relay: research/browser-relay.md
+      - Free destinations: research/free-destinations.md
+  - Reviews:
+      - Design review: reviews/2026-11-22-design-review.md
+      - Code review: reviews/2026-11-22-code-review.md
+      - Code review 2: reviews/2026-11-22-code-review-2.md
+      - Code review 3: reviews/2026-11-22-code-review-3.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+plugins:
+  - search
+
+validation:
+  links:
+    not_found: warn
+    absolute_links: ignore

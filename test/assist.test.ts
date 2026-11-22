@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { main } from "../src/cli.ts";
@@ -35,6 +35,49 @@ test("HN displays title and canonical URL without copying", async () => {
   assert.match(io.text(), /Show HN: Demo/); assert.match(io.text(), /https:\/\/dev.to\/demo\/post/);
   assert.match(io.text(), /HN forbids generated text and automated posting/);
   assert.ok(!calls.some((cmd) => ["pbcopy", "xclip", "clip"].includes(cmd)));
+});
+
+test("HN assist falls back to the home draft for older published state", async () => {
+  const { cwd, campaign } = project();
+  saveState(campaign, { devto: { status: "published", url: "https://dev.to/demo/post" } });
+  const io = fakeIO({ cwd, isTTY: true, answers: [""], run: async () => "" });
+  assert.equal(await main(["publish", "demo", "--assist", "--only", "hn"], io), 0);
+  assert.match(io.text(), /title: Show HN: Demo/);
+  assert.match(io.text(), /URL: https:\/\/dev.to\/demo\/post/);
+});
+
+test("HN assist reports a missing destination home title even when hn.title is configured", async () => {
+  const { cwd, campaign } = project();
+  writeFileSync(join(cwd, "market-blaster.yml"), "brand: { name: Demo }\ndestinations: [devto, hn]\ncanonicalHome: devto\nhn:\n  title: Human title\n");
+  unlinkSync(join(campaign, "drafts/devto.md"));
+  saveState(campaign, { devto: { status: "published", url: "https://dev.to/demo/post" } });
+  const io = fakeIO({ cwd, isTTY: true, answers: [""], run: async () => "" });
+  assert.equal(await main(["publish", "demo", "--assist", "--only", "hn"], io), 1);
+  assert.match(io.text(), /set a title in the home draft/);
+});
+
+test("marking the canonical home records its title for a later HN publish", async () => {
+  const { cwd, campaign } = project();
+  saveState(campaign, {});
+  const mark = fakeIO({ cwd });
+  assert.equal(await main(["mark", "demo", "devto", "--url", "https://dev.to/demo/post"], mark), 0);
+  const state = JSON.parse(readFileSync(join(campaign, "state.json"), "utf8"));
+  assert.equal(state.devto.title, "Show HN: Demo");
+  const publish = fakeIO({ cwd });
+  assert.equal(await main(["publish", "demo", "--yes", "--only", "hn"], publish), 0);
+  assert.match(publish.text(), /hn\s+handoff/);
+  assert.match(publish.text(), /Show(?:\+|%20)HN/);
+});
+
+test("assist refuses an unapproved outline without opening or copying it", async () => {
+  const { cwd, campaign } = project();
+  saveState(campaign, { devto: { status: "published", url: "https://dev.to/demo/post", title: "Show HN: Demo" } });
+  const calls: string[] = [];
+  const io = fakeIO({ cwd, isTTY: true, run: async (cmd) => { calls.push(cmd); return ""; } });
+  assert.equal(await main(["publish", "demo", "--assist", "--only", "reddit"], io), 1);
+  assert.match(io.text(), /reddit: refused: draft is not approved or has changed/);
+  assert.doesNotMatch(io.text(), /Talking points/);
+  assert.deepEqual(calls, []);
 });
 
 test("outline is not copied", async () => {

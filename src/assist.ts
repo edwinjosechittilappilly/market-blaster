@@ -29,12 +29,12 @@ export async function assistCampaign(opts: { config: Config; campaign: string; e
       const ctx: Ctx = { config, env, fetch: io.fetch, timeoutMs: 30_000, run: io.run };
       let failed = false;
       for (const id of selected) {
-        const draft: Draft | undefined = id === "hn" ? { destination: "hn", title: home && isDestinationId(home) ? state[home]?.title : config.hn?.title, evidence: [], body: "", path: "" } : checked.drafts.get(id);
+        const draft: Draft | undefined = id === "hn" ? { destination: "hn", title: home && isDestinationId(home) ? state[home]?.title ?? checked.drafts.get(home)?.title : config.hn?.title, evidence: [], body: "", path: "" } : checked.drafts.get(id);
         if (!draft || draft.skip) continue;
         if (needsApproval(id) && state[id]?.approvedHash !== approvalHash(draft, config)) {
           io.out(`${id}: refused: draft is not approved or has changed`); failed = true; continue;
         }
-        if (id === "hn" && !draft.title) { io.out("hn: skipped: published home title unavailable; set hn.title for an external canonical home"); failed = true; continue; }
+        if (id === "hn" && !draft.title) { io.out(home && isDestinationId(home) ? "hn: skipped: home title unavailable; set a title in the home draft" : "hn: skipped: home title unavailable; set hn.title for an external canonical home"); failed = true; continue; }
         if (state[id]?.status === "unknown" || state[id]?.status === "pending" || state[id]?.lastAttempt?.status === "unknown") {
           io.out(`${id}: refused: unknown outcome; resolve with mark`); failed = true; continue;
         }

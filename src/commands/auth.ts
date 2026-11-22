@@ -67,7 +67,7 @@ export async function run(args: string[], io: IO, options: Options = {}): Promis
     return 0;
   }
   if (action !== "list" && action !== "linkedin" || rest.length) throw new UserError("Usage: mblast auth set <KEY> [--stdin] | list | linkedin");
-  const { env, sources } = loadEnvWithSources(root ? dirname(root) : io.cwd, io.env, get);
+  const { env, sources } = loadEnvWithSources(root ? dirname(root) : io.cwd, io.env, get, action === "linkedin" ? ["LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET", "LINKEDIN_ACCESS_TOKEN", "LINKEDIN_TOKEN_ISSUED"] : undefined);
   if (action === "list") {
     for (const key of AUTH_ENV_VARS) io.out(`${key}: ${sources[key] ?? "unset"}`);
     return 0;

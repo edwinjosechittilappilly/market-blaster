@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, linkSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { UserError } from "./types.ts";
 import type { CampaignState, Config, DestinationId, DestinationState, Draft } from "./types.ts";
@@ -14,34 +14,60 @@ export class LockError extends UserError {
 
 export const needsApproval = (id: DestinationId): boolean => META[id].ai !== "none";
 
+interface LockChecks {
+  now: () => number;
+  isPidAlive: (pid: number) => boolean;
+}
+
+const defaultLockChecks: LockChecks = {
+  now: Date.now,
+  isPidAlive: (pid) => {
+    try { process.kill(pid, 0); return true; }
+    catch (err) { return (err as NodeJS.ErrnoException).code !== "ESRCH"; }
+  },
+};
+
 /** Serialize read-modify-write operations across processes, removing locks from dead processes. */
-export async function withStateLock<T>(campaign: string, fn: () => Promise<T>): Promise<T> {
+export async function withStateLock<T>(
+  campaign: string,
+  fn: () => Promise<T>,
+  checks: LockChecks = defaultLockChecks,
+): Promise<T> {
   mkdirSync(campaign, { recursive: true });
   const lock = `${statePath(campaign)}.lock`;
-  let fd: number;
+  const tmp = `${lock}.${process.pid}.${randomUUID()}.tmp`;
+  writeFileSync(tmp, String(process.pid), { flag: "wx" });
   try {
-    fd = openSync(lock, "wx");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-    let stale = false;
-    try {
-      const pid = Number(readFileSync(lock, "utf8").trim());
-      if (Number.isSafeInteger(pid) && pid > 0) {
-        try { process.kill(pid, 0); } catch (e) { stale = (e as NodeJS.ErrnoException).code === "ESRCH"; }
-      } else stale = true;
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === "ENOENT") return withStateLock(campaign, fn);
-      throw e;
+    for (;;) {
+      try {
+        linkSync(tmp, lock);
+        break;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      }
+      let stale: boolean;
+      try {
+        const content = readFileSync(lock, "utf8").trim();
+        const pid = /^\d+$/.test(content) ? Number(content) : NaN;
+        stale = Number.isSafeInteger(pid) && pid > 0
+          ? !checks.isPidAlive(pid)
+          : checks.now() - statSync(lock).mtimeMs > 10_000;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw err;
+      }
+      if (!stale) throw new LockError();
+      // Concurrent stale-lock reclaimers can race: one may unlink a replacement lock
+      // acquired by the other between the stale check and this unlink.
+      try { unlinkSync(lock); }
+      catch (err) { if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err; }
     }
-    if (!stale) throw new LockError();
-    try { unlinkSync(lock); } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
-    return withStateLock(campaign, fn);
+  } finally {
+    unlinkSync(tmp);
   }
   try {
-    writeFileSync(fd, String(process.pid));
     return await fn();
   } finally {
-    closeSync(fd);
     unlinkSync(lock);
   }
 }

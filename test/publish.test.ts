@@ -35,7 +35,9 @@ test("approval gates content and dry run respects staging", async () => {
   assert.equal(await approve(["test"], io), 1);
   await approveAll(s.root);
   assert.equal(await publishCampaign({ ...s, io, env, adapters: ADAPTERS, stage: true }), 0);
-  assert.match(io.text(), /"published":false/);
+  assert.match(io.text(), /devto\s+api/);
+  assert.match(io.text(), /title: Test title/);
+  assert.match(io.text(), /POST https:\/\/dev\.to\/api\/articles.*published:false/);
   const path = join(s.campaign, "drafts/devto.md");
   writeFileSync(path, `${readFileSync(path, "utf8")}changed`);
   assert.equal(await publishCampaign({ ...s, io, env, adapters: ADAPTERS, yes: true }), 1);
@@ -78,21 +80,22 @@ test("update timeout keeps live URL and mark not-posted retries PUT", async () =
 });
 
 test("retries 429 with Retry-After and connection refused, but not 500", async () => {
-  for (const scenario of ["429", "refused", "500"]) {
+  for (const scenario of ["429", "exhausted429", "refused", "500"]) {
     const s = setup(["devto"], "devto:\n  publish: true\n"); await approveAll(s.root);
     let writes = 0; const waits: number[] = [];
     const fetcher: typeof fetch = async (_input, init) => {
       if (init?.method !== "POST") return Response.json({ id: 7 });
       writes++;
-      if (writes === 1) {
+      if (writes === 1 || scenario === "exhausted429") {
         if (scenario === "refused") throw new TypeError("fetch failed", { cause: { code: "ECONNREFUSED" } });
-        return new Response("failure", { status: Number(scenario), headers: { "retry-after": "3" } });
+        return new Response("failure", { status: scenario === "exhausted429" ? 429 : Number(scenario), headers: { "retry-after": "3" } });
       }
       return Response.json({ id: 7, url: "https://dev.to/post" });
     };
     const io = fakeIO({ cwd: s.root, fetch: fetcher });
-    assert.equal(await publishCampaign({ ...s, io, env, adapters: ADAPTERS, yes: true, sleep: async ms => { waits.push(ms); } }), scenario === "500" ? 1 : 0);
-    assert.equal(writes, scenario === "500" ? 1 : 2);
+    assert.equal(await publishCampaign({ ...s, io, env, adapters: ADAPTERS, yes: true, sleep: async ms => { waits.push(ms); } }), scenario === "500" || scenario === "exhausted429" ? 1 : 0);
+    assert.equal(writes, scenario === "500" ? 1 : scenario === "exhausted429" ? 3 : 2);
+    assert.equal(loadState(s.campaign).devto?.status, scenario === "500" ? "unknown" : scenario === "exhausted429" ? "failed" : "published");
     if (scenario === "429") assert.deepEqual(waits, [3000]);
     if (scenario === "refused") assert.deepEqual(waits, [100]);
   }
@@ -196,13 +199,6 @@ test("approval includes discussion settings and invalid configuration is rejecte
   assert.throws(() => setup(["github-discussion"]), /githubDiscussion/);
 });
 
-test("empty and invalid lock files are stale", async () => {
-  const s = setup(["devto"]);
-  for (const pid of ["", "invalid"]) {
-    writeFileSync(join(s.campaign, "state.json.lock"), pid);
-    assert.equal(await withStateLock(s.campaign, async () => 42), 42);
-  }
-});
 
 test("newsletter prints each distinct target", async () => {
   const s = setup(["newsletter"], "newsletter:\n  targets: [console-dev, javascript-weekly, golang-weekly]\n");
@@ -218,4 +214,42 @@ test("DEV invalid tags are reported rather than thrown in dry run", async () => 
   const io = fakeIO({ cwd: s.root });
   assert.equal(await publishCampaign({ ...s, io, env, adapters: ADAPTERS }), 1);
   assert.match(io.text(), /devto: error:.*tags/i);
+});
+
+test("marking canonical home supplies HN title, including legacy state fallback", async () => {
+  const s = setup(["devto", "hn"], "canonicalHome: devto\n");
+  await approveAll(s.root);
+  const io = fakeIO({ cwd: s.root });
+  assert.equal(await mark(["test", "devto", "--url", "https://dev.to/post"], io), 0);
+  assert.equal(loadState(s.campaign).devto?.title, "Test title");
+  const statePath = join(s.campaign, "state.json");
+  const state = JSON.parse(readFileSync(statePath, "utf8"));
+  delete state.devto.title;
+  writeFileSync(statePath, JSON.stringify(state));
+  assert.equal(await publishCampaign({ ...s, io, env, adapters: ADAPTERS, yes: true }), 0);
+  assert.match(io.text(), /news\.ycombinator\.com\/submitlink\?.*t=Test%20title/);
+});
+
+test("adapter errors after create are unknown and redact credentials", async () => {
+  const s = setup(["devto"]); await approveAll(s.root);
+  const io = fakeIO({ cwd: s.root });
+  const adapters = { ...ADAPTERS, devto: { ...ADAPTERS.devto, verify: async () => {}, create: async () => { throw new Error("boom secret"); } } };
+  assert.equal(await publishCampaign({ ...s, io, env, adapters, yes: true }), 1);
+  assert.equal(loadState(s.campaign).devto?.status, "unknown");
+  assert.doesNotMatch(io.text(), /secret/);
+  assert.doesNotMatch(readFileSync(join(s.campaign, "state.json"), "utf8"), /secret/);
+});
+
+test("dry run displays blocks and JSON retains full payload", async () => {
+  const s = setup(["devto", "x"], "canonicalHome: devto\n", { x: "---\ndestination: x\nevidence: [E1]\n---\nGrounded evidence {{url:devto}}\n" });
+  await approveAll(s.root);
+  const io = fakeIO({ cwd: s.root });
+  assert.equal(await publishCampaign({ ...s, io, env, adapters: ADAPTERS }), 0);
+  assert.match(io.text(), /devto\s+api[\s\S]*title: Test title[\s\S]*https:\/\/dev\.to\/api\/articles/);
+  assert.match(io.text(), /x\s+handoff[\s\S]*<pending:devto>[\s\S]*https:\/\/x\.com\/intent\/post/);
+  const json = fakeIO({ cwd: s.root });
+  assert.equal(await publishCampaign({ ...s, io: json, env, adapters: ADAPTERS, json: true }), 0);
+  const records = json.stdout.map(line => JSON.parse(line));
+  assert.equal(records[0].payload.article.body_markdown, "Grounded evidence");
+  assert.match(records[1].payload.url, /x\.com\/intent\/post/);
 });

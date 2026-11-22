@@ -1,0 +1,31 @@
+{
+  "title": "Market Blaster",
+  "subtitle": "C4 level 2: local publishing containers",
+  "theme": "ibm",
+  "nodes": [
+    {"id": "user", "label": "Publisher", "sublabel": "Reviews and submits", "kind": "actor", "domain": "user", "col": 0, "row": 1},
+    {"id": "repo", "label": "Project repository", "sublabel": "Git, PR and changelog", "kind": "data", "domain": "data", "col": 1, "row": 0},
+    {"id": "cli", "label": "Market Blaster CLI", "sublabel": "Node.js and TypeScript", "domain": "compute", "col": 2, "row": 1},
+    {"id": "agent", "label": "Drafting agent", "sublabel": "Temporary workspace", "domain": "ai", "col": 3, "row": 0},
+    {"id": "campaign", "label": "Campaign files", "sublabel": "Brief, drafts and state", "kind": "data", "domain": "data", "col": 3, "row": 1},
+    {"id": "keychain", "label": "macOS Keychain", "sublabel": "Optional credentials", "kind": "data", "domain": "security", "col": 3, "row": 2},
+    {"id": "browser", "label": "User browser", "sublabel": "Human-operated handoffs", "domain": "compute", "col": 4, "row": 2},
+    {"id": "apis", "label": "Platform APIs", "sublabel": "Articles and social", "kind": "external", "domain": "external", "col": 5, "row": 0},
+    {"id": "sites", "label": "Platform websites", "sublabel": "Compose and submit", "kind": "external", "domain": "external", "col": 5, "row": 2}
+  ],
+  "groups": [
+    {"id": "local", "label": "User's machine", "domain": "network", "children": ["repo", "cli", "agent", "campaign", "keychain", "browser"]}
+  ],
+  "edges": [
+    {"from": "user", "to": "cli", "label": "Commands and approval"},
+    {"from": "repo", "to": "cli", "label": "Change evidence"},
+    {"from": "cli", "to": "agent", "label": "Brief and skill"},
+    {"from": "agent", "to": "campaign", "label": "Validated drafts via CLI"},
+    {"from": "cli", "to": "campaign", "label": "Brief, approvals and state"},
+    {"from": "keychain", "to": "cli", "label": "Credentials"},
+    {"from": "cli", "to": "apis", "label": "API requests", "style": "dashed"},
+    {"from": "cli", "to": "browser", "label": "Compose URL"},
+    {"from": "user", "to": "browser", "label": "Reviews and posts"},
+    {"from": "browser", "to": "sites", "label": "Manual submission", "style": "dashed"}
+  ]
+}

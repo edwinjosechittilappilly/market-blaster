@@ -37,6 +37,53 @@ test("keychain errors never expose secret and list reports only sources", async 
   assert.match(input, /766572792d736563726574/);
 });
 
+test("keychain distinguishes missing items from access failures without exposing details", () => {
+  const failure = (status: number) => Object.assign(new Error("secret security output"), { status });
+  assert.equal(keychainGet("DEV_API_KEY", () => { throw failure(44); }, "darwin"), undefined);
+  assert.throws(
+    () => keychainGet("DEV_API_KEY", () => { throw failure(51); }, "darwin"),
+    (err: Error) => /DEV_API_KEY/.test(err.message) && !err.message.includes("secret security output"),
+  );
+  assert.throws(() => keychainGet("DEV_API_KEY", () => { throw new Error("failure"); }, "darwin"), /DEV_API_KEY/);
+});
+
+test("auth list looks up credentials for all destinations", async () => {
+  const lookedUp: string[] = [];
+  const io = fakeIO({ cwd: tempProject(), env: {} });
+  await auth(["list"], io, { get: (key) => { lookedUp.push(key); return undefined; } });
+  assert.ok(lookedUp.includes("DEV_API_KEY"));
+  assert.ok(lookedUp.includes("MASTODON_TOKEN"));
+  assert.ok(lookedUp.includes("LINKEDIN_CLIENT_SECRET"));
+});
+
+test("doctor looks up only enabled destination credentials", async () => {
+  const cwd = tempProject({ "market-blaster.yml": "brand: { name: Test }\ndestinations: [devto]\n" });
+  const lookedUp: string[] = [];
+  const io = fakeIO({ cwd, env: {}, keychain: (key) => {
+    lookedUp.push(key);
+    if (key !== "DEV_API_KEY") throw new Error(`unrelated lookup: ${key}`);
+    return "fake-token";
+  } });
+  assert.equal(await doctor([], io), 0);
+  assert.deepEqual(lookedUp, ["DEV_API_KEY"]);
+});
+
+test("doctor propagates Keychain access errors rather than reporting credentials missing", async () => {
+  const cwd = tempProject({ "market-blaster.yml": "brand: { name: Test }\ndestinations: [linkedin]\nlinkedin: { api: true }\n" });
+  const io = fakeIO({ cwd, env: {}, keychain: (key) => keychainGet(key, () => {
+    throw Object.assign(new Error("sensitive"), { status: 51 });
+  }, "darwin") });
+  await assert.rejects(doctor([], io), (err: Error) => /LINKEDIN_ACCESS_TOKEN/.test(err.message) && !err.message.includes("sensitive"));
+});
+
+test("doctor loads optional destination settings from Keychain", async () => {
+  const cwd = tempProject({ "market-blaster.yml": "brand: { name: Test }\ndestinations: [mastodon]\n" });
+  const credentials: Record<string, string> = { MASTODON_TOKEN: "token", MASTODON_HOST: "mastodon.example" };
+  const io = fakeIO({ cwd, env: {}, keychain: (key) => credentials[key] });
+  assert.equal(await doctor([], io), 0);
+  assert.match(io.text(), /mastodon\s+api/);
+});
+
 test("LinkedIn loopback exchanges code and stores token", async () => {
   const saved: Record<string, string> = {};
   const root = tempProject({ ".env": "LINKEDIN_TOKEN_ISSUED=old\n" });

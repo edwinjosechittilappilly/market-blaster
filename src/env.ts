@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ALL_ENV_VARS } from "./destinations/meta.ts";
-import type { Env } from "./types.ts";
+import { ALL_ENV_VARS, META } from "./destinations/meta.ts";
+import type { DestinationId, Env } from "./types.ts";
 
 /** Parses KEY=VALUE lines; supports comments, `export ` prefixes and single/double quotes. */
 export function parseDotenv(text: string): Env {
@@ -21,10 +21,20 @@ export function parseDotenv(text: string): Env {
 export const AUTH_ENV_VARS = [...ALL_ENV_VARS, "LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET", "LINKEDIN_TOKEN_ISSUED"];
 export type EnvSource = "shell" | ".env" | "keychain";
 
+/** Keychain keys consumed by the selected destinations, including optional settings. */
+export function destinationEnvVars(destinations: DestinationId[]): string[] {
+  const keys = new Set(destinations.flatMap((id) => META[id].env));
+  if (destinations.includes("bluesky")) keys.add("BLUESKY_HOST");
+  if (destinations.includes("mastodon")) keys.add("MASTODON_HOST");
+  if (destinations.includes("linkedin")) keys.add("LINKEDIN_TOKEN_ISSUED");
+  return [...keys];
+}
+
 export function loadEnvWithSources(
   root: string,
   processEnv: Env = process.env,
   keychain: (key: string) => string | undefined = () => undefined,
+  keys: readonly string[] = AUTH_ENV_VARS,
 ): { env: Env; sources: Record<string, EnvSource> } {
   const file = join(root, ".env");
   const fromFile = existsSync(file) ? parseDotenv(readFileSync(file, "utf8")) : {};
@@ -36,7 +46,7 @@ export function loadEnvWithSources(
   for (const [key, value] of Object.entries(processEnv)) {
     if (value) { env[key] = value; sources[key] = "shell"; }
   }
-  for (const key of AUTH_ENV_VARS) {
+  for (const key of keys) {
     if (env[key]) continue;
     const value = keychain(key);
     if (value) { env[key] = value; sources[key] = "keychain"; }
@@ -44,8 +54,8 @@ export function loadEnvWithSources(
   return { env, sources };
 }
 
-export function loadEnv(root: string, processEnv: Env = process.env, keychain?: (key: string) => string | undefined): Env {
-  return loadEnvWithSources(root, processEnv, keychain).env;
+export function loadEnv(root: string, processEnv: Env = process.env, keychain?: (key: string) => string | undefined, keys?: readonly string[]): Env {
+  return loadEnvWithSources(root, processEnv, keychain, keys).env;
 }
 
 /** Replaces every credential value found in `text` with `***`. */

@@ -1,0 +1,67 @@
+/* Ink and signal coral match the Market Blaster artwork. */
+:root {
+  --md-primary-fg-color: #0f1020;
+  --md-primary-fg-color--light: #292b42;
+  --md-primary-fg-color--dark: #090a15;
+  --md-accent-fg-color: #b33320;
+  --md-typeset-a-color: #a82e1c;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #0f1020;
+  --md-primary-fg-color: #0f1020;
+  --md-accent-fg-color: #ff806a;
+  --md-typeset-a-color: #ff9b89;
+}
+
+.md-grid {
+  max-width: none;
+  margin-inline: clamp(1rem, 3vw, 3rem);
+}
+
+.md-typeset > p:not(:has(img)),
+.md-typeset > ul,
+.md-typeset > ol {
+  max-width: 75ch;
+}
+
+.md-typeset__table,
+.md-typeset__scrollwrap {
+  width: 100%;
+}
+
+.md-typeset table:not([class]) {
+  display: table;
+  width: 100%;
+}
+
+.md-clipboard,
+.md-code__button {
+  opacity: 1 !important;
+}
+
+.md-typeset pre > code {
+  padding-right: 3.2rem;
+}
+
+.md-typeset h1 {
+  font-weight: 600;
+  color: #0f1020;
+}
+
+[data-md-color-scheme="slate"] .md-typeset h1 {
+  color: #f7f3f1;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+::selection {
+  background: #ff806a66;
+}

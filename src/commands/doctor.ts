@@ -3,14 +3,14 @@ import { loadConfig } from "../config.ts";
 import { ADAPTERS } from "../destinations/index.ts";
 import { META } from "../destinations/meta.ts";
 import { modeOf, withGithubToken } from "../destinations/mode.ts";
-import { loadEnvWithSources, redact } from "../env.ts";
+import { destinationEnvVars, loadEnvWithSources, redact } from "../env.ts";
 import type { Command } from "../io.ts";
 import { ALL_ENV_VARS } from "../destinations/meta.ts";
 
 export const run: Command = async (args, io) => {
   const { values } = parseArgs({ args, options: { online: { type: "boolean", default: false } } });
   const config = loadConfig(io.cwd);
-  const loaded = loadEnvWithSources(config.root, io.env, io.keychain);
+  const loaded = loadEnvWithSources(config.root, io.env, io.keychain, destinationEnvVars(config.destinations));
   const env = await withGithubToken(loaded.env, io.run);
   let failures = 0;
 

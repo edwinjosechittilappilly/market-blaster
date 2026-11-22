@@ -1,0 +1,36 @@
+# The original /private/tmp/acme-search path is shown as .; approval output shows only questions.
+$ mblast new search-filters --range v1.0.0..HEAD
+Wrote ./campaigns/search-filters/brief.md (4 evidence anchors)
+devto  present
+bluesky  present
+x  present
+reddit  present
+0 error(s), 0 warning(s)
+$ mblast approve search-filters
+approve devto? [y/N] y
+approve bluesky? [y/N] y
+approve x? [y/N] y
+approve reddit? [y/N] y
+$ mblast publish search-filters
+devto  api  (article, unpublished on DEV)
+  title: Filter search results
+  text:  Filter search results with a shell pipeline.
+         
+         ```sh … 2 more lines
+  sends: POST https://dev.to/api/articles  {title, body_markdown, published:false, tags:[]}
+bluesky  api  (social)
+  text:  Filter search results with a shell pipeline. <pending:devto>
+  sends: request fields: {collection, record}
+x  handoff  (compose link, prefills full text)
+  text:  Filter search results with a shell pipeline. <pending:devto>
+  open:  https://x.com/intent/post?text=Filter%20search%20results%20with%20a%20shell%20pipeline.%20%3Cpendin…
+hn  handoff  (compose link, prefills link)
+  title: Filter search results
+  text:  (none: write it yourself; HN forbids generated text)
+  open:  https://news.ycombinator.com/submitlink?u=%3Cpending%3Adevto%3E&t=Filter%20search%20results
+reddit  handoff  (compose link, prefills link)
+  title: Filtering search results
+  text:  talking points, write the post yourself:
+         - Show the shell pipeline for filtering search results.
+         - Ask how others filter results.
+  open:  https://www.reddit.com/r/commandline/submit?url=%3Cpending%3Adevto%3E
