@@ -57,24 +57,49 @@ posted where.
 
 ## 3. Credentials
 
-Copy `.env.example` to `.env` in the project root (`init` adds `.env` to `.gitignore`), or export the variables in
-your shell. Shell values win. The drafting agent never sees these variables.
-
-| Platform | Mode | Variables | How to get them |
-|---|---|---|---|
-| DEV | API | `DEV_API_KEY` | dev.to → Settings → Extensions → DEV Community API Keys |
-| Hashnode | API, needs a Pro publication | `HASHNODE_TOKEN` and `hashnode.publicationId` | hashnode.com → Settings → Developer. The publication ID is in your blog dashboard URL |
-| GitHub Gist | API | `GITHUB_TOKEN`, or nothing if `gh auth login` was run with the `gist` scope | `gh auth refresh -s gist` |
-| Bluesky | API | `BLUESKY_IDENTIFIER`, `BLUESKY_APP_PASSWORD` (optional `BLUESKY_HOST`) | bsky.app → Settings → Privacy and security → App passwords. Never use your login password |
-| Mastodon | API | `MASTODON_TOKEN`; host in `mastodon.host` or `MASTODON_HOST` | Your instance → Preferences → Development → New application, with scopes `read:accounts` and `write:statuses` |
-| LinkedIn | Handoff; API when `linkedin.api: true` | `LINKEDIN_ACCESS_TOKEN` | Create an app at developer.linkedin.com, add the **Share on LinkedIn** and **Sign In with LinkedIn using OpenID Connect** products, and get a 3-legged OAuth token with `openid profile w_member_social`. Tokens last about 60 days; set a reminder |
-| X | Handoff; API when `x.api: true` | `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_SECRET` | developer.x.com app with read and write permissions. API posts are billed: $0.015 each, or $0.20 with a link |
-| HN, Reddit, Threads, Medium, Product Hunt, Substack | Handoff | none | No usable write API. Market Blaster prints the final copy and a compose link |
-
-Check the setup:
+On macOS, store credentials once per machine in Keychain (service `market-blaster`):
 
 ```bash
-mblast doctor           # api / handoff / missing per destination, with the missing variable names
+mblast auth set DEV_API_KEY
+mblast auth set BLUESKY_IDENTIFIER
+mblast auth set BLUESKY_APP_PASSWORD
+mblast auth set MASTODON_TOKEN
+mblast auth list  # sources only, never values
+```
+
+Each command reads a hidden value. To pipe a value, use `mblast auth set KEY --stdin`. Alternatively, copy
+`.env.example` to `.env` in the project root (`init` adds it to `.gitignore`), or export variables in your shell.
+Precedence is shell, project `.env`, then Keychain. On non-macOS use `.env` or shell variables.
+
+| Platform | Mode | Setup |
+|---|---|---|
+| DEV | API | `DEV_API_KEY`: dev.to → Settings → Extensions → DEV Community API Keys |
+| Hashnode | Optional API, needs Pro | `HASHNODE_TOKEN` and `hashnode.publicationId`; hashnode.com → Settings → Developer |
+| GitHub Gist | API | `GITHUB_TOKEN` or `gh auth refresh -s gist` |
+| Bluesky | API | `BLUESKY_IDENTIFIER` and `BLUESKY_APP_PASSWORD`; create an app password in Settings, not your login password |
+| Mastodon | API | Create an account on hachyderm.io and an application with `read:accounts` and `write:statuses`; store `MASTODON_TOKEN`. Set `mastodon.host: hachyderm.io` and `mastodon.maxChars: 2263` in the config |
+| LinkedIn | Handoff or opt-in API | Follow the LinkedIn steps below; set `linkedin.api: true` for API publishing |
+| X | Free intent link | No keys needed; the paid API is optional with `x.api: true` |
+| HN, Reddit, Threads, Medium, Product Hunt, Substack | Handoff | No credentials needed |
+
+For LinkedIn API access, create an app in the [LinkedIn Developer Portal](https://www.linkedin.com/developers/apps),
+add the **Share on LinkedIn** and **Sign In with LinkedIn using OpenID Connect** products, and register
+`http://localhost:8723/callback` as an authorized redirect URL under Auth. LinkedIn's own
+[example app](https://github.com/linkedin-developers/linkedin-api-js-client/blob/master/examples/oauth-member-auth-redirect.ts)
+uses an `http://localhost` redirect the same way.
+Then store the app credentials and authorize in your browser:
+
+```bash
+mblast auth set LINKEDIN_CLIENT_ID
+mblast auth set LINKEDIN_CLIENT_SECRET
+mblast auth linkedin
+```
+
+The token and issue date are stored in Keychain. Tokens last about 60 days; `doctor` warns after 50 days to rerun
+`mblast auth linkedin`.
+
+```bash
+mblast doctor           # api / handoff / missing and credential sources
 mblast doctor --online  # also makes one authenticated read per API destination
 ```
 

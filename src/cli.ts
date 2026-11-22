@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { createInterface } from "node:readline/promises";
+import { run as auth } from "./commands/auth.ts";
 import { run as approve } from "./commands/approve.ts";
 import { run as brief } from "./commands/brief.ts";
 import { run as check } from "./commands/check.ts";
@@ -16,6 +17,7 @@ import { UserError } from "./types.ts";
 
 const COMMANDS: Record<string, { summary: string; run: Command }> = {
   init: { summary: "write market-blaster.yml and .env.example", run: init },
+  auth: { summary: "manage credentials: auth set <KEY> [--stdin] | list | linkedin", run: auth },
   doctor: { summary: "show which destinations publish by API and which hand off [--online]", run: doctor },
   new: { summary: "brief + draft + check in one go: new <slug> --range A..B [--pr N]", run: newCampaign },
   brief: { summary: "collect evidence: brief <slug> --range A..B [--pr N] [--version V] [--force]", run: brief },
@@ -47,16 +49,22 @@ export function help(): string {
 function runProgram(
   cmd: string,
   args: string[],
-  opts: { cwd?: string; env?: Record<string, string | undefined>; input?: string } = {},
+  opts: { cwd?: string; env?: Record<string, string | undefined>; input?: string; timeoutMs?: number } = {},
 ): Promise<string> {
   const { promise, resolve, reject } = Promise.withResolvers<string>();
   const child = execFile(
     cmd,
     args,
-    { cwd: opts.cwd, env: opts.env as NodeJS.ProcessEnv | undefined, maxBuffer: 64 * 1024 * 1024 },
+    {
+      cwd: opts.cwd,
+      env: opts.env as NodeJS.ProcessEnv | undefined,
+      maxBuffer: 64 * 1024 * 1024,
+      timeout: opts.timeoutMs ?? 0,
+    },
     (error, stdout, stderr) => {
-      if (error) reject(new Error(`${cmd} ${args.join(" ")}: ${stderr.trim() || error.message}`));
-      else resolve(stdout);
+      if (!error) return resolve(stdout);
+      const reason = error.killed && opts.timeoutMs ? `timed out after ${opts.timeoutMs / 1000}s` : error.message;
+      reject(new Error(`${cmd}: ${stderr.trim().slice(0, 500) || reason}`));
     },
   );
   if (opts.input !== undefined) child.stdin?.end(opts.input);

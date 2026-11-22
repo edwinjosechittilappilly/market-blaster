@@ -106,7 +106,7 @@ New commands:
 - `mblast auth set <VAR>` prompts with hidden input and writes the value to the Keychain.
 - `mblast auth list` shows which variables are set, never their values.
 - `mblast auth linkedin` runs the OAuth flow:
-  1. starts a loopback server on `127.0.0.1`;
+  1. starts a loopback server on `localhost:8723` (redirect `http://localhost:8723/callback`);
   2. opens LinkedIn's consent page in your browser;
   3. exchanges the code;
   4. stores the token and its issue date.

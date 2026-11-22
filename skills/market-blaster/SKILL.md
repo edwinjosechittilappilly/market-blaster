@@ -5,13 +5,19 @@ description: Turns a shipped feature brief into grounded, destination-specific d
 
 # Market blaster
 
-Use only facts in the supplied brief and brand config. Cite brief evidence anchors in each draft's `evidence` list. Never invent numbers, users, benchmarks, capabilities, or examples. Distinguish shipped changes from plans and limitations. Tell a developer-native story: problem → change → how to try it. Use a direct, specific voice; avoid hype such as revolutionary, game-changing, groundbreaking, seamless, unlock, supercharge, and unleash. Use one primary link. Respect community rules and avoid promotional spam.
+Use only facts in brief.md and brand.yml. Cite actual `## [E<n>]` brief headings in each draft's evidence. Never invent numbers, users, benchmarks, capabilities, or examples; distinguish shipped changes from plans and limitations. Tell a developer-native story: problem, change, how to try it. Avoid hype and respect community rules.
 
-Use `{{url:<dest>}}` only for enabled destinations earlier in the supplied publish order, with canonical home first. Do not infer a URL for a later destination. Skip gist and hn unless the brief has a runnable example: leave existing files untouched, do not write those drafts, and explain the omission in your report.
+Draft the canonical home first. Social posts link to it with `{{url:<home>}}` when the home is an enabled destination; use the supplied URL for an external home. Only link to enabled destinations earlier in the supplied publish order. Use one primary link.
+
+## AI policy
+
+- HN: never write generated HN text or a draft file. The human submits the canonical article.
+- Reddit and Product Hunt: write only bullet talking points, not a post. Suggest subreddit fit for Reddit and remind the human to disclose self-promotion and check community rules. The human writes the post.
+- Other destinations: write a first draft for human review. Gist requires a runnable example supported by the brief; otherwise write a skip file.
 
 ## Draft format
 
-Write only requested paths. Each file is Markdown with YAML frontmatter followed by a body:
+Write only requested paths under `drafts/`. Use Markdown with YAML frontmatter:
 
 ```markdown
 ---
@@ -25,62 +31,30 @@ canonical: "{{url:hashnode}}"
 The draft body.
 ```
 
-`destination` and non-empty `evidence` are required; `title` is required as specified below. `tags` and `canonical` are optional; include canonical only when it points to an earlier destination or a supplied canonical URL. Use actual anchors from the brief, not the examples.
+Use a destination matching the filename and non-empty evidence. Include a title where required. Tags and canonical are optional. Use real evidence anchors rather than the examples.
 
-## devto
+## How to write a skip file
 
-Write a practical Markdown article with usage and tradeoffs. Body limit not specified; title required, at most 128 characters. Frontmatter: `destination: devto`, `title: "Title"`, `evidence: [E1]`.
+When a destination is inappropriate, write its requested file with a reason; no title, evidence, or body is required:
 
-## hashnode
+```markdown
+---
+destination: gist
+skip: "No runnable example in the brief"
+---
+```
 
-Write a technical Markdown article with an example and context. Body limit not specified; title required, at most 250 characters. Frontmatter: `destination: hashnode`, `title: "Title"`, `evidence: [E1]`.
+## Reach
 
-## gist
-
-Write a runnable example and minimal instructions only if supported by the brief. Size limit varies; title required. Frontmatter: `destination: gist`, `title: "Title"`, `evidence: [E1]`.
-
-## bluesky
-
-Write a concise standalone post; at most 300 graphemes. Title optional. Frontmatter: `destination: bluesky`, `evidence: [E1]`.
-
-## mastodon
-
-Write a conversational standalone post; default 500 characters, subject to the configured instance limit. Title optional. Frontmatter: `destination: mastodon`, `evidence: [E1]`.
-
-## linkedin
-
-Write a practical professional update with a concrete developer outcome; at most 3000 characters. Title optional. Frontmatter: `destination: linkedin`, `evidence: [E1]`.
-
-## x
-
-Write a concise standalone post; at most 280 weighted characters. Title optional. Frontmatter: `destination: x`, `evidence: [E1]`.
-
-## hn
-
-Write a factual Show HN submission only if the brief contains a runnable example. Body limit not specified; title required, at most 80 characters. Frontmatter: `destination: hn`, `title: "Title"`, `evidence: [E1]`.
-
-## reddit
-
-Write a useful subreddit-appropriate self-post, respecting community rules. Body limit not specified; title required, at most 300 characters. Frontmatter: `destination: reddit`, `title: "Title"`, `evidence: [E1]`.
-
-## threads
-
-Write a conversational standalone post; at most 500 characters. Title optional. Frontmatter: `destination: threads`, `evidence: [E1]`.
-
-## medium
-
-Write a readable Markdown article with technical context. Body limit not specified; title optional. Frontmatter: `destination: medium`, `evidence: [E1]`.
-
-## producthunt
-
-Write a concise launch description explaining the problem, change, and how to try it. Limit not specified; title optional. Frontmatter: `destination: producthunt`, `evidence: [E1]`.
-
-## substack
-
-Write a reader-focused newsletter note with technical substance. Body limit not specified; title required. Frontmatter: `destination: substack`, `title: "Title"`, `evidence: [E1]`.
+- LinkedIn: put the concrete outcome in the first two lines, link at the end, use at most three hashtags, and never say "excited to announce".
+- X and Bluesky: use a concrete hook plus code or before/after, and one link.
+- Mastodon: use accessible CamelCase hashtags.
+- DEV: use a tutorial structure with code and relevant tags.
+- Follow the per-destination guidance in the reference below when available.
 
 ## Checklist
 
-- Every claim is grounded and every evidence anchor exists in the brief.
-- Each requested draft follows its destination's shape and limits; skipped gist/hn drafts are reported.
-- Run `mblast check <slug>` and address errors; report warnings and omissions.
+- Claims and evidence are grounded in the brief; no invented facts.
+- Every requested file has valid frontmatter and matches its destination; use a skip file with a reason where appropriate.
+- HN has no draft; Reddit and Product Hunt contain talking points only.
+- Respect destination limits and link order; report omissions and uncertainties.

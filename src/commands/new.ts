@@ -14,7 +14,6 @@ export const run: Command = async (args, io) => {
   if (values.version) briefArgs.push("--version", values.version);
   const briefResult = await brief(briefArgs, io);
   if (briefResult) return briefResult;
-  const draftResult = await draft([slug], io);
-  if (draftResult) return draftResult;
+  await draft([slug], io);
   return check([slug], io);
 };

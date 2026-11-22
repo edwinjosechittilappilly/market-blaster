@@ -11,8 +11,15 @@ export interface IO {
   /** Reads one line of user input (only called when isTTY). */
   prompt(question: string): Promise<string>;
   fetch: typeof fetch;
-  /** Runs a program, returning stdout; rejects with stderr on non-zero exit. */
-  run(cmd: string, args: string[], opts?: { cwd?: string; env?: Env; input?: string }): Promise<string>;
+  /**
+   * Runs a program, returning stdout; rejects on non-zero exit. The rejection message carries the program name
+   * and stderr, never the arguments (they can hold a whole prompt). `timeoutMs` kills the process when exceeded.
+   */
+  run(
+    cmd: string,
+    args: string[],
+    opts?: { cwd?: string; env?: Env; input?: string; timeoutMs?: number },
+  ): Promise<string>;
 }
 
 export type Command = (args: string[], io: IO) => Promise<number>;

@@ -36,11 +36,12 @@ export interface Config {
   /** A long-form destination id or an absolute URL. */
   canonicalHome?: string;
   campaignsDir: string;
-  agent: { command: string[] };
+  /** `timeoutSeconds`: how long `mblast draft` lets the agent run before killing it (default 900). */
+  agent: { command: string[]; timeoutSeconds: number };
   devto: { tags?: string[]; publish?: boolean };
   hashnode: { publicationId?: string };
   gist: { public?: boolean };
-  bluesky: { host?: string };
+  bluesky: { host?: string; langs?: string[] };
   /** `maxChars`: the instance's status limit; the adapter reads it from the instance at preflight. */
   mastodon: { host?: string; maxChars?: number };
   linkedin: { api?: boolean };
@@ -56,6 +57,8 @@ export interface Draft {
   canonical?: string;
   evidence: string[];
   body: string;
+  /** Set when the agent or author decided this destination should not get a post; the value is the reason. */
+  skip?: string;
   /** Path of the draft file. */
   path: string;
 }
@@ -81,6 +84,8 @@ export interface DestinationState {
   contentHash?: string;
   at?: string;
   error?: string;
+  /** Outcome of the latest update attempt on an already-published entry; the entry itself stays `published`. */
+  lastAttempt?: { status: "unknown" | "failed"; error: string };
 }
 
 export type CampaignState = Partial<Record<DestinationId, DestinationState>>;
@@ -94,11 +99,13 @@ export interface Ctx {
   timeoutMs: number;
   /** Runs a command and returns stdout; used for `gh auth token`. Injected for tests. */
   run?: (cmd: string, args: string[]) => Promise<string>;
+  crosspost?: (id: "x" | "linkedin", env: Env) => { post(text: string, options: { signal: AbortSignal }): Promise<unknown>; getUrlFromResponse(response: never): string };
 }
 
 export interface Published {
   id: string;
   url: string;
+  staged?: boolean;
 }
 
 export interface HandoffInfo {
@@ -122,7 +129,7 @@ export interface Destination {
   update?(id: string, post: ResolvedPost, ctx: Ctx, opts: { stage: boolean }): Promise<Published>;
   handoff?(post: ResolvedPost, ctx: Ctx): HandoffInfo;
   /** Request body the dry run prints. */
-  payload(post: ResolvedPost, ctx: Ctx): unknown;
+  payload(post: ResolvedPost, ctx: Ctx, opts?: { stage: boolean }): unknown;
   /** Expected charge in USD for one create, when the platform bills per call. */
   cost?(post: ResolvedPost): number;
 }

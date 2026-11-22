@@ -70,7 +70,10 @@ export function validateConfig(raw: unknown, root: string): Config {
     destinations: destinations as DestinationId[],
     canonicalHome,
     campaignsDir: typeof data.campaignsDir === "string" ? data.campaignsDir : "campaigns",
-    agent: { command },
+    agent: {
+      command,
+      timeoutSeconds: typeof agent.timeoutSeconds === "number" && agent.timeoutSeconds > 0 ? agent.timeoutSeconds : 900,
+    },
     devto: obj(data.devto),
     hashnode: obj(data.hashnode),
     gist: obj(data.gist),

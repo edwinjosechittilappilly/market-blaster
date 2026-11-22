@@ -1,19 +1,13 @@
 import { measureBody } from "../limits.ts";
-import { HttpError } from "../types.ts";
 import type { Ctx, Destination } from "../types.ts";
 import { META } from "./meta.ts";
+import { requestJson } from "./http.ts";
 
 async function request(ctx: Ctx, path: string, init: RequestInit = {}): Promise<{ id: string; url: string; configuration?: { statuses?: { max_characters?: number } } }> {
   const host = ctx.env.MASTODON_HOST || ctx.config.mastodon.host;
-  const response = await ctx.fetch(`https://${host}${path}`, {
-    ...init, headers: { authorization: `Bearer ${ctx.env.MASTODON_TOKEN ?? ""}`, ...init.headers }, signal: AbortSignal.timeout(ctx.timeoutMs),
+  return requestJson(ctx, "mastodon", `https://${host}${path}`, {
+    ...init, headers: { authorization: `Bearer ${ctx.env.MASTODON_TOKEN ?? ""}`, ...init.headers },
   });
-  const text = await response.text();
-  if (!response.ok) {
-    const safe = Object.values(ctx.env).reduce<string>((s, v) => v ? s.split(v).join("***") : s, text.slice(0, 200));
-    throw new HttpError(response.status, `mastodon ${response.status}: ${safe}`);
-  }
-  return JSON.parse(text);
 }
 
 export const mastodon: Destination = {

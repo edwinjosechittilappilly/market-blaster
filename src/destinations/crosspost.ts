@@ -1,24 +1,34 @@
 import { TwitterStrategy, LinkedInStrategy } from "@humanwhocodes/crosspost";
-import { measureBody } from "../limits.ts";
+import { measureBody, URL_RE } from "../limits.ts";
 import { HttpError } from "../types.ts";
 import type { Ctx, Destination } from "../types.ts";
 import { META } from "./meta.ts";
 import { xIntent, linkedinShare } from "./handoffs.ts";
+import { requestJson, redactAdapter } from "./http.ts";
 
-type Strategy = { post(text: string, options: { signal: AbortSignal }): Promise<unknown>; getUrlFromResponse(response: never): string };
-// Each Crosspost strategy pairs its own response type with its URL extractor.
-export let strategyFactory: (id: "x" | "linkedin", ctx: Ctx) => Strategy = (id, ctx) => (id === "x"
-  ? new TwitterStrategy({ accessTokenKey: ctx.env.X_ACCESS_TOKEN!, accessTokenSecret: ctx.env.X_ACCESS_SECRET!, apiConsumerKey: ctx.env.X_API_KEY!, apiConsumerSecret: ctx.env.X_API_SECRET! })
-  : new LinkedInStrategy({ accessToken: ctx.env.LINKEDIN_ACCESS_TOKEN! })) as unknown as Strategy;
-
-export function setStrategyFactory(factory: typeof strategyFactory) { strategyFactory = factory; }
+type Strategy = NonNullable<Ctx["crosspost"]> extends (...args: never[]) => infer S ? S : never;
+function strategy(id: "x" | "linkedin", ctx: Ctx): Strategy {
+  return ctx.crosspost ? ctx.crosspost(id, ctx.env) : (id === "x"
+    ? new TwitterStrategy({ accessTokenKey: ctx.env.X_ACCESS_TOKEN!, accessTokenSecret: ctx.env.X_ACCESS_SECRET!, apiConsumerKey: ctx.env.X_API_KEY!, apiConsumerSecret: ctx.env.X_API_SECRET! })
+    : new LinkedInStrategy({ accessToken: ctx.env.LINKEDIN_ACCESS_TOKEN! })) as unknown as Strategy;
+}
 
 async function create(id: "x" | "linkedin", text: string, ctx: Ctx) {
-  const strategy = strategyFactory(id, ctx);
-  // Crosspost owns its networking; it does not accept an injected fetch.
-  const response = await strategy.post(text, { signal: AbortSignal.timeout(ctx.timeoutMs) });
-  const result = response as { data?: { id?: string }; id?: string };
-  return { id: String(result.data?.id ?? result.id), url: strategy.getUrlFromResponse(response as never) };
+  const client = strategy(id, ctx);
+  const { promise: timeout, reject } = Promise.withResolvers<never>();
+  const timer = setTimeout(() => reject(new DOMException("Crosspost timed out", "TimeoutError")), ctx.timeoutMs);
+  try {
+    const response = await Promise.race([client.post(text, { signal: AbortSignal.timeout(ctx.timeoutMs) }), timeout]);
+    const result = response as { data?: { id?: string }; id?: string };
+    return { id: String(result.data?.id ?? result.id), url: client.getUrlFromResponse(response as never) };
+  } catch (error) {
+    const e = error as { code?: unknown; requestError?: unknown; message?: string };
+    if (typeof e.code === "number" && e.code >= 100 && e.code <= 599) throw new HttpError(e.code, `${id} ${e.code}: ${redactAdapter(e.message ?? "", ctx, id)}`);
+    if (e.requestError) throw e.requestError;
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export const x: Destination = {
@@ -38,15 +48,10 @@ export const linkedin: Destination = {
   payload: (post) => ({ text: post.body }),
   create: (post, ctx) => create("linkedin", post.body, ctx),
   handoff: (post) => {
-    const url = post.body.match(/https?:\/\/[^\s)>\]]+/)?.[0];
+    const url = post.body.match(URL_RE)?.[0];
     return url ? { url: linkedinShare(url), prefills: "link" } : { prefills: "none" };
   },
   async verify(ctx) {
-    const response = await ctx.fetch("https://api.linkedin.com/v2/userinfo", { headers: { authorization: `Bearer ${ctx.env.LINKEDIN_ACCESS_TOKEN ?? ""}` }, signal: AbortSignal.timeout(ctx.timeoutMs) });
-    if (!response.ok) {
-      const text = (await response.text()).slice(0, 200);
-      const safe = Object.values(ctx.env).reduce<string>((s, v) => v ? s.split(v).join("***") : s, text);
-      throw new HttpError(response.status, `linkedin ${response.status}: ${safe}`);
-    }
+    await requestJson(ctx, "linkedin", "https://api.linkedin.com/v2/userinfo", { headers: { authorization: `Bearer ${ctx.env.LINKEDIN_ACCESS_TOKEN ?? ""}` } });
   },
 };

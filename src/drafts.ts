@@ -30,6 +30,7 @@ export function parseDraft(path: string, text: string): Draft {
     title: front.title == null ? undefined : String(front.title),
     tags: front.tags == null ? undefined : list(front.tags),
     canonical: front.canonical == null ? undefined : String(front.canonical),
+    skip: front.skip == null ? undefined : String(front.skip),
     evidence: list(front.evidence),
     body: m[2].trim(),
     path,

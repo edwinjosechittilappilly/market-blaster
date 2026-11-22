@@ -1,6 +1,6 @@
 import type { Config, DestinationId } from "./types.ts";
 
-const URL_RE = /https?:\/\/[^\s)>\]]+/g;
+export const URL_RE = /https?:\/\/[^\s<>]*[^\s<>.,;:!?\])}'"]/g;
 /** X and Mastodon count every link as 23 characters (t.co length). */
 const SHORT_LINK = "x".repeat(23);
 

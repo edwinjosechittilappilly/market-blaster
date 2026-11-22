@@ -37,6 +37,7 @@ export const run: Command = async (args, io) => {
   if (positionals.length !== 1 || !values.range || !/^[^-\s][^\s]*\.\.[^\s]+$/.test(values.range)) {
     throw new UserError("usage: mblast brief <slug> --range A..B [--pr N] [--version V] [--force]");
   }
+  if (values.pr !== undefined && !/^\d+$/.test(values.pr)) throw new UserError("--pr must be a number");
   const config = loadConfig(io.cwd);
   const dir = campaignDir(config, positionals[0]);
   const path = join(dir, "brief.md");

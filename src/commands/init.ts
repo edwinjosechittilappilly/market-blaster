@@ -76,7 +76,7 @@ export const run: Command = async (_args, io) => {
 
   const envExample = join(io.cwd, ".env.example");
   if (!existsSync(envExample)) {
-    const lines = ["# Copy to .env (gitignored). Shell environment values win over .env.", ""];
+    const lines = ["# Prefer macOS Keychain: run mblast auth set <KEY>.", "# Alternatively copy to .env (gitignored). Shell values win over .env and Keychain.", ""];
     for (const key of ALL_ENV_VARS) lines.push(`# ${ENV_DOC[key] ?? ""}`, `${key}=`, "");
     writeFileSync(envExample, lines.join("\n"));
     io.out("wrote .env.example");

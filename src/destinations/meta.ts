@@ -13,34 +13,50 @@ export interface DestinationMeta {
   optInApi: boolean;
   /** Can fall back to a handoff when API mode is unavailable. */
   hasHandoff: boolean;
+  /**
+   * What the AI may write (docs/design/auth-and-reach.md):
+   * - `draft`: a first draft you edit.
+   * - `outline`: talking points only; you write the post, and nothing is copied for you.
+   * - `none`: no draft file; the post is built from the canonical article (HN forbids generated text).
+   */
+  ai: "draft" | "outline" | "none";
 }
 
 export const META: Record<DestinationId, DestinationMeta> = {
-  devto: { kind: "article", env: ["DEV_API_KEY"], needsTitle: true, optInApi: false, hasHandoff: false },
-  hashnode: { kind: "article", env: ["HASHNODE_TOKEN"], needsTitle: true, optInApi: false, hasHandoff: false },
-  gist: { kind: "article", env: ["GITHUB_TOKEN"], needsTitle: true, optInApi: false, hasHandoff: false },
+  devto: { kind: "article", env: ["DEV_API_KEY"], needsTitle: true, optInApi: false, hasHandoff: false, ai: "draft" },
+  hashnode: { kind: "article", env: ["HASHNODE_TOKEN"], needsTitle: true, optInApi: false, hasHandoff: false, ai: "draft" },
+  gist: { kind: "article", env: ["GITHUB_TOKEN"], needsTitle: true, optInApi: false, hasHandoff: false, ai: "draft" },
   bluesky: {
     kind: "social",
     env: ["BLUESKY_IDENTIFIER", "BLUESKY_APP_PASSWORD"],
     needsTitle: false,
     optInApi: false,
     hasHandoff: false,
+    ai: "draft",
   },
-  mastodon: { kind: "social", env: ["MASTODON_TOKEN"], needsTitle: false, optInApi: false, hasHandoff: false },
-  linkedin: { kind: "social", env: ["LINKEDIN_ACCESS_TOKEN"], needsTitle: false, optInApi: true, hasHandoff: true },
+  mastodon: { kind: "social", env: ["MASTODON_TOKEN"], needsTitle: false, optInApi: false, hasHandoff: false, ai: "draft" },
+  linkedin: {
+    kind: "social",
+    env: ["LINKEDIN_ACCESS_TOKEN"],
+    needsTitle: false,
+    optInApi: true,
+    hasHandoff: true,
+    ai: "draft",
+  },
   x: {
     kind: "social",
     env: ["X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_SECRET"],
     needsTitle: false,
     optInApi: true,
     hasHandoff: true,
+    ai: "draft",
   },
-  hn: { kind: "handoff", env: [], needsTitle: true, optInApi: false, hasHandoff: true },
-  reddit: { kind: "handoff", env: [], needsTitle: true, optInApi: false, hasHandoff: true },
-  threads: { kind: "handoff", env: [], needsTitle: false, optInApi: false, hasHandoff: true },
-  medium: { kind: "handoff", env: [], needsTitle: false, optInApi: false, hasHandoff: true },
-  producthunt: { kind: "handoff", env: [], needsTitle: false, optInApi: false, hasHandoff: true },
-  substack: { kind: "handoff", env: [], needsTitle: true, optInApi: false, hasHandoff: true },
+  hn: { kind: "handoff", env: [], needsTitle: false, optInApi: false, hasHandoff: true, ai: "none" },
+  reddit: { kind: "handoff", env: [], needsTitle: true, optInApi: false, hasHandoff: true, ai: "outline" },
+  threads: { kind: "handoff", env: [], needsTitle: false, optInApi: false, hasHandoff: true, ai: "draft" },
+  medium: { kind: "handoff", env: [], needsTitle: false, optInApi: false, hasHandoff: true, ai: "draft" },
+  producthunt: { kind: "handoff", env: [], needsTitle: false, optInApi: false, hasHandoff: true, ai: "outline" },
+  substack: { kind: "handoff", env: [], needsTitle: true, optInApi: false, hasHandoff: true, ai: "draft" },
 };
 
 /** Every variable any destination reads; used for `.env.example` and the agent env denylist. */

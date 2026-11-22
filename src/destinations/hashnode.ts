@@ -2,28 +2,26 @@ import { measureBody } from "../limits.ts";
 import { HttpError } from "../types.ts";
 import type { Ctx, Destination, ResolvedPost } from "../types.ts";
 import { META } from "./meta.ts";
+import { requestJson, redactAdapter } from "./http.ts";
 
 function input(post: ResolvedPost, ctx: Ctx) {
   return { publicationId: ctx.config.hashnode.publicationId, title: post.title, contentMarkdown: post.body, tags: [], originalArticleURL: post.canonical };
 }
 
-async function graphql(ctx: Ctx, query: string, variables?: object): Promise<{ createDraft: { draft: { id: string } }; publishPost: { post: { id: string; url: string } }; publishDraft: { post: { id: string; url: string } }; updatePost: { post: { id: string; url: string } } }> {
-  const response = await ctx.fetch("https://gql.hashnode.com", {
+type GraphqlData = { createDraft: { draft: { id: string } }; publishPost: { post: { id: string; url: string } }; publishDraft: { post: { id: string; url: string } }; updatePost: { post: { id: string; url: string } } };
+async function graphql(ctx: Ctx, query: string, variables?: object): Promise<GraphqlData> {
+  const result = await requestJson<{ data: GraphqlData; errors?: unknown[] }>(ctx, "hashnode", "https://gql.hashnode.com", {
     method: "POST", headers: { authorization: ctx.env.HASHNODE_TOKEN ?? "", "content-type": "application/json" },
-    body: JSON.stringify({ query, variables }), signal: AbortSignal.timeout(ctx.timeoutMs),
+    body: JSON.stringify({ query, variables }),
   });
-  const text = await response.text();
-  const safe = (s: string) => Object.values(ctx.env).reduce<string>((v, secret) => secret ? v.split(secret).join("***") : v, s);
-  if (!response.ok) throw new HttpError(response.status, `hashnode ${response.status}: ${safe(text.slice(0, 200))}`);
-  const result = JSON.parse(text);
-  if (result.errors?.length) throw new HttpError(422, `hashnode 422: ${safe(JSON.stringify(result.errors).slice(0, 200))}`);
+  if (result.errors?.length) throw new HttpError(422, `hashnode 422: ${redactAdapter(JSON.stringify(result.errors).slice(0, 200), ctx, "hashnode")}`);
   return result.data;
 }
 
 export const hashnode: Destination = {
   id: "hashnode", kind: "article", env: META.hashnode.env,
   limit: (text, ctx) => measureBody("hashnode", text, ctx.config),
-  payload: (post, ctx) => ({ query: "mutation ($input: PublishPostInput!) { publishPost(input: $input) { post { id url } } }", variables: { input: input(post, ctx) } }),
+  payload: (post, ctx, opts) => ({ query: opts?.stage ? "mutation ($input: CreateDraftInput!) { createDraft(input: $input) { draft { id } } }" : "mutation ($input: PublishPostInput!) { publishPost(input: $input) { post { id url } } }", variables: { input: input(post, ctx) } }),
   async verify(ctx) { await graphql(ctx, "query { me { id username } }"); },
   async create(post, ctx, opts) {
     if (opts.stage) {

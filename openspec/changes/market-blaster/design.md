@@ -75,7 +75,7 @@ token.
 - **The drafting agent:**
   - `agent.command` defaults to `["omp", "-p"]`, and the prompt is the last argument.
   - Its environment is limited to `PATH`, `HOME`, `USER`, `LANG`, `TERM`, `TMPDIR` and `XDG_*`.
-  - It runs with the working directory set to the project.
+  - It runs in a disposable workspace containing only the brief, secret-free brand and destination settings, skill, and an empty drafts directory. Only validated requested drafts are copied back.
 - **DEV defaults to unpublished articles** (`devto.publish: false`). Setting `devto.publish: true` creates them
   published.
 - **Grounding check.** `check` collects these tokens from a draft:
