@@ -25,6 +25,18 @@ export function parseDraft(path: string, text: string): Draft {
   const destination = String(front.destination ?? "");
   if (!isDestinationId(destination)) throw new UserError(`${path}: unknown or missing destination "${destination}"`);
   const list = (v: unknown) => (Array.isArray(v) ? v.map(String) : typeof v === "string" ? [v] : []);
+  if (front.media !== undefined && (!Array.isArray(front.media) || front.media.some((item: unknown) =>
+    !item || typeof item !== "object" || Array.isArray(item)
+    || typeof (item as Record<string, unknown>).path !== "string"
+    || typeof (item as Record<string, unknown>).alt !== "string"
+    || typeof (item as Record<string, unknown>).kind !== "string"))) {
+    throw new UserError(`${path}: invalid media frontmatter`);
+  }
+  if (front.studio !== undefined && (!front.studio || typeof front.studio !== "object"
+    || Array.isArray(front.studio) || typeof (front.studio as Record<string, unknown>).reviewHash !== "string"
+    || typeof (front.studio as Record<string, unknown>).verdict !== "string")) {
+    throw new UserError(`${path}: invalid studio frontmatter`);
+  }
   return {
     destination,
     title: front.title == null ? undefined : String(front.title),
@@ -32,6 +44,8 @@ export function parseDraft(path: string, text: string): Draft {
     canonical: front.canonical == null ? undefined : String(front.canonical),
     skip: front.skip == null ? undefined : String(front.skip),
     evidence: list(front.evidence),
+    media: front.media as Draft["media"],
+    studio: front.studio as Draft["studio"],
     body: m[2].trim(),
     path,
   };

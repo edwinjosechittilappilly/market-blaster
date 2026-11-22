@@ -1,9 +1,10 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { META, publishOrder } from "./destinations/meta.ts";
 import { loadDrafts } from "./drafts.ts";
 import { measureBody, measureTitle } from "./limits.ts";
 import { linksIn, resolveLinks } from "./links.ts";
+import { reviewHash } from "./manifest.ts";
 import type { Config, DestinationId, Draft } from "./types.ts";
 
 export interface Finding { destination: DestinationId; level: "error" | "warning"; message: string }
@@ -23,6 +24,18 @@ export function checkCampaign(config: Config, campaign: string, opts: { only?: D
     const draft = drafts.get(destination);
     if (!draft) { add("error", "missing draft"); continue; }
     if (draft.skip) continue;
+    for (const media of draft.media ?? []) {
+      if (!media.alt.trim()) add("error", `media ${media.path}: missing alt text`);
+      try {
+        const base = realpathSync(campaign);
+        if (isAbsolute(media.path)) throw new Error();
+        const file = realpathSync(resolve(base, media.path));
+        const rel = relative(base, file);
+        if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel) || !statSync(file).isFile()) throw new Error();
+      } catch { add("error", `media ${media.path}: missing or not campaign-local`); }
+    }
+    if (draft.studio && reviewHash({ title: draft.title, body: draft.body, media: draft.media ?? [] }) !== draft.studio.reviewHash)
+      add("warning", "Studio review is stale");
     if (destination === "devto") {
       const tags = draft.tags ?? config.devto.tags ?? [];
       if (tags.length > 4 || tags.some((tag) => !/^[a-z0-9]+$/.test(tag)))

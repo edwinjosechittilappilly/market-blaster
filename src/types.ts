@@ -71,6 +71,8 @@ export interface Draft {
   /** Set when the agent or author decided this destination should not get a post; the value is the reason. */
   skip?: string;
   /** Path of the draft file. */
+  media?: { path: string; alt: string; kind: string }[];
+  studio?: { reviewHash: string; verdict: string };
   path: string;
 }
 

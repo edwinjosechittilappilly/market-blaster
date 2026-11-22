@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://market-blaster.local/schemas/studio-manifest.v1.json",
+  "title": "Blast Studio manifest v1",
+  "type": "object",
+  "required": ["version", "slug", "generatedAt", "brief", "posts"],
+  "properties": {
+    "version": { "const": 1 },
+    "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "brief": { "const": "brief.md" },
+    "posts": { "type": "array", "items": { "$ref": "#/$defs/post" } }
+  },
+  "$defs": {
+    "media": {
+      "type": "object", "required": ["path", "alt", "kind"],
+      "properties": { "path": { "type": "string", "minLength": 1 }, "alt": { "type": "string" }, "kind": { "type": "string", "minLength": 1 } }
+    },
+    "post": {
+      "type": "object", "required": ["platform", "destination", "body", "evidence", "media", "review"],
+      "properties": {
+        "platform": { "type": "string", "minLength": 1 },
+        "destination": { "enum": ["devto", "hashnode", "gist", "github-discussion", "bluesky", "mastodon", "linkedin", "x", "nostr", "hn", "reddit", "threads", "medium", "producthunt", "substack", "lemmy", "newsletter"] },
+        "title": { "type": "string" }, "body": { "type": "string" },
+        "evidence": { "type": "array", "items": { "type": "string" } },
+        "disclosure": { "type": "object", "additionalProperties": false, "properties": { "text": { "type": "string" }, "media": { "type": "string" }, "voice": { "type": "string" } } },
+        "media": { "type": "array", "items": { "$ref": "#/$defs/media" } },
+        "thread": { "type": "array", "items": { "type": "string" } },
+        "review": { "type": "object", "required": ["verdict", "total", "reviewHash"], "properties": {
+          "verdict": { "enum": ["pass", "accepted", "revise", "blocked"] },
+          "total": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+          "reviewHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        } }
+      }
+    }
+  }
+}

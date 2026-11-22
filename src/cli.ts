@@ -7,6 +7,7 @@ import { run as brief } from "./commands/brief.ts";
 import { run as check } from "./commands/check.ts";
 import { run as doctor } from "./commands/doctor.ts";
 import { run as draft } from "./commands/draft.ts";
+import { run as importStudio } from "./commands/import.ts";
 import { run as init } from "./commands/init.ts";
 import { run as installSkill } from "./commands/install-skill.ts";
 import { run as launch } from "./commands/launch.ts";
@@ -24,6 +25,7 @@ const COMMANDS: Record<string, { summary: string; run: Command }> = {
   new: { summary: "brief + draft + check in one go: new <slug> --range A..B [--pr N]", run: newCampaign },
   brief: { summary: "collect evidence: brief <slug> --range A..B [--pr N] [--version V] [--force]", run: brief },
   draft: { summary: "AI-draft every destination from the brief: draft <slug> [--force]", run: draft },
+  import: { summary: "import a Studio package: import <dir> [--slug s] [--force]", run: importStudio },
   check: { summary: "validate drafts: check <slug> [--strict]", run: check },
   approve: { summary: "review and approve drafts (interactive): approve <slug> [--only a,b]", run: approve },
   publish: {
