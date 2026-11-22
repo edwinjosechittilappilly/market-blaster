@@ -18,7 +18,14 @@ terminal before publishing through APIs or completing a manual handoff.
 
 ## Quickstart
 
-Requires Node 22.18+, git, access to this private repository, and a configured drafting agent. Install from a clone:
+Requires Node 22.18+, git, and a configured drafting agent:
+
+```bash
+npm install -g market-blaster
+mblast install-skill
+```
+
+Alternatively, install from a clone:
 
 ```bash
 gh repo clone edwinjosechittilappilly/market-blaster

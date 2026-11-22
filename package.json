@@ -4,7 +4,16 @@
   "description": "Turn a shipped feature into grounded, platform-specific posts for DEV, Hashnode, Gist, Bluesky, Mastodon, LinkedIn, X, HN and Reddit.",
   "type": "module",
   "license": "Apache-2.0",
-  "private": true,
+  "author": "Edwin Jose Chittilappilly",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edwinjosechittilappilly/market-blaster.git"
+  },
+  "homepage": "https://edwinjosechittilappilly.github.io/market-blaster/",
+  "bugs": "https://github.com/edwinjosechittilappilly/market-blaster/issues",
+  "keywords": ["marketing", "cli", "social-media", "publishing"],
+  "files": ["bin", "dist", "skills"],
+  "publishConfig": { "access": "public", "provenance": true },
   "bin": {
     "mblast": "bin/mblast.mjs"
   },
@@ -12,6 +21,8 @@
     "node": ">=22.18"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "test": "node --test --test-reporter=spec \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit"
   },

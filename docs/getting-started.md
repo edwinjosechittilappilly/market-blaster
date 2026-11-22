@@ -4,7 +4,14 @@ Market Blaster collects evidence from a Git repository, drafts posts, and publis
 
 ## Install
 
-You need Node.js 22.18 or newer and Git. The GitHub CLI (`gh`) is optional; it can provide pull request evidence and a Gist token. Clone and link the tool from outside `node_modules`:
+You need Node.js 22.18 or newer and Git. The GitHub CLI (`gh`) is optional; it can provide pull request evidence and a Gist token.
+
+```bash
+npm install -g market-blaster
+mblast install-skill
+```
+
+Alternatively, clone and link the tool:
 
 ```bash
 git clone https://github.com/edwinjosechittilappilly/market-blaster.git ~/Documents/GitHub/market-blaster
@@ -14,7 +21,18 @@ npm link
 mblast install-skill
 ```
 
-`npm link` puts `mblast` on your PATH, pointing to the clone. A plain global npm install does not work because Node does not run TypeScript inside `node_modules`. To update, run `git pull && npm install` in the clone. The link continues to point there.
+`npm link` puts `mblast` on your PATH, pointing to the clone. To update, run `git pull && npm install` in the clone. The link continues to point there.
+
+## Releasing
+
+Bump the version in `package.json` and `package-lock.json`, commit it, then create and push a matching tag:
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+The release workflow requires an `NPM_TOKEN` repository secret with permission to publish. It tests and publishes the package with provenance, then creates a GitHub release with the npm tarball. npm Trusted Publishing can replace the token after it is configured for this repository.
 
 ## Configure your project
 
