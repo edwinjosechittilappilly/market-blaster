@@ -84,10 +84,14 @@ test("mode: api with credentials, handoff for opt-in APIs and handoff-only, miss
   assert.equal(modeOf("devto", config, { DEV_API_KEY: "k" }).mode, "api");
   const x = modeOf("x", config, {});
   assert.equal(x.mode, "handoff");
-  assert.ok(x.missing.includes("X_API_KEY"));
+  assert.deepEqual(x.missing, [], "x is a handoff by choice, so its API keys are not reported missing");
   const xWithKeys = modeOf("x", config, { X_API_KEY: "a", X_API_SECRET: "b", X_ACCESS_TOKEN: "c", X_ACCESS_SECRET: "d" });
   assert.equal(xWithKeys.mode, "handoff");
   assert.match(xWithKeys.note ?? "", /x\.api: true/);
+  const optedIn = validateConfig({ brand: { name: "x" }, destinations: ["x"], x: { api: true } }, "/tmp");
+  assert.equal(modeOf("x", optedIn, {}).mode, "handoff");
+  assert.ok(modeOf("x", optedIn, {}).missing.includes("X_API_KEY"));
+  assert.equal(modeOf("x", optedIn, { X_API_KEY: "a", X_API_SECRET: "b", X_ACCESS_TOKEN: "c", X_ACCESS_SECRET: "d" }).mode, "api");
   assert.equal(modeOf("hn", config, {}).mode, "handoff");
   assert.deepEqual(modeOf("bluesky", config, {}).missing, ["BLUESKY_IDENTIFIER", "BLUESKY_APP_PASSWORD"]);
   assert.equal(modeOf("bluesky", config, {}).mode, "missing");
@@ -117,7 +121,7 @@ test("doctor shows api for configured destinations and handoff with missing vari
   assert.equal(await doctor([], io), 1, "bluesky has no credentials and no handoff, so doctor fails");
   const text = io.text();
   assert.match(text, /^devto\s+api\b/m);
-  assert.match(text, /^x\s+handoff\b.*X_API_KEY/m);
+  assert.match(text, /^x\s+handoff\b.*x\.api: true/m);
   assert.match(text, /^bluesky\s+missing\b.*BLUESKY_APP_PASSWORD/m);
   assert.ok(!text.includes("dev-key-123"));
 });

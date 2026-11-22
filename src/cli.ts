@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { createInterface } from "node:readline/promises";
+import { createInterface, type Interface } from "node:readline/promises";
 import { run as auth } from "./commands/auth.ts";
 import { run as approve } from "./commands/approve.ts";
 import { run as brief } from "./commands/brief.ts";
@@ -73,6 +73,9 @@ function runProgram(
   return promise;
 }
 
+/** One readline interface for the whole run, so pasted multi-line answers are not dropped between prompts. */
+let readline: Interface | undefined;
+
 export function realIO(): IO {
   return {
     cwd: process.cwd(),
@@ -81,11 +84,13 @@ export function realIO(): IO {
     err: (line) => process.stderr.write(`${line}\n`),
     isTTY: Boolean(process.stdin.isTTY),
     async prompt(question) {
-      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      readline ??= createInterface({ input: process.stdin, output: process.stdout });
       try {
-        return await rl.question(question);
-      } finally {
-        rl.close();
+        return await readline.question(`${question} `);
+      } catch (err) {
+        // Ctrl+D / Ctrl+C at a prompt means "no", not a crash.
+        if ((err as Error).name === "AbortError") return "";
+        throw err;
       }
     },
     fetch: globalThis.fetch,
@@ -112,5 +117,8 @@ export async function main(argv: string[], io: IO = realIO()): Promise<number> {
       return 1;
     }
     throw err;
+  } finally {
+    readline?.close();
+    readline = undefined;
   }
 }

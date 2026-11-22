@@ -15,15 +15,14 @@ export interface ModeInfo {
 export function modeOf(id: DestinationId, config: Config, env: Env): ModeInfo {
   const meta = META[id];
   if (meta.kind === "handoff") return { mode: "handoff", missing: [] };
+  const optedIn = !meta.optInApi || config[id as "x" | "linkedin"].api === true;
+  // Not opted in: a deliberate handoff, so API variables are not "missing".
+  if (!optedIn) return { mode: "handoff", missing: [], note: `handoff by choice; set ${id}.api: true to post through the API` };
   const missing = meta.env.filter((k) => !env[k]);
   if (id === "mastodon" && !(env.MASTODON_HOST || config.mastodon.host)) missing.push("MASTODON_HOST or mastodon.host");
   if (id === "hashnode" && !config.hashnode.publicationId) missing.push("hashnode.publicationId");
-  const optedIn = !meta.optInApi || config[id as "x" | "linkedin"].api === true;
-  if (missing.length === 0 && optedIn) return { mode: "api", missing: [] };
-  const fallback: Mode = meta.hasHandoff ? "handoff" : "missing";
-  return missing.length === 0
-    ? { mode: fallback, missing, note: `set ${id}.api: true in market-blaster.yml to post through the API` }
-    : { mode: fallback, missing };
+  if (missing.length === 0) return { mode: "api", missing: [] };
+  return { mode: meta.hasHandoff ? "handoff" : "missing", missing };
 }
 
 /** Fills GITHUB_TOKEN from `gh auth token` when unset, so Gist works with an existing gh login. */

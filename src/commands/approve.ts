@@ -25,7 +25,8 @@ export const run: Command = async (args, io) => {
   for (const id of config.destinations.filter((id) => !only || only.includes(id))) {
     const draft = checked.drafts.get(id);
     if (!draft || draft.skip) continue;
-    io.out(`${id}${draft.title ? `: ${draft.title}` : ""}\ntags: ${(draft.tags ?? []).join(", ")}\ncanonical: ${draft.canonical ?? config.canonicalHome ?? "-"}\n${resolveLinks(draft.body, urls)}`);
+    const canonical = draft.canonical ?? (config.canonicalHome && config.canonicalHome !== id ? config.canonicalHome : "-");
+    io.out(`${id}${draft.title ? `: ${draft.title}` : ""}\ntags: ${(draft.tags ?? []).join(", ")}\ncanonical: ${canonical}\n${resolveLinks(draft.body, urls)}`);
     if (/^y(?:es)?$/i.test((await io.prompt(`approve ${id}? [y/N]`)).trim())) updateState(campaign, state, id, { approvedHash: approvalHash(draft, config) });
   }
   return 0;

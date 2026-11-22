@@ -81,34 +81,76 @@ id. A social destination in that state SHALL be refused unless `--force`, which 
 - **THEN** the request is `PUT /api/articles/7` and no new article is created
 
 ### Requirement: Staging long-form drafts
-`publish --stage --yes` SHALL create unpublished DEV and Hashnode drafts and record them `staged`; a later
-`publish --yes` SHALL publish those by update, not create.
+`publish --stage --yes` SHALL create unpublished DEV and Hashnode drafts, record them `staged`, and skip every other
+destination; a later `publish --yes` SHALL publish staged entries by update, not create. With `devto.publish: false`
+a normal publish also records DEV as `staged`.
 
 #### Scenario: Stage then publish DEV
 - **WHEN** `--stage --yes` then `--yes` run for devto
 - **THEN** the first call sends `published: false`, the second updates the same id with `published: true`
 
+#### Scenario: Stage run leaves socials alone
+- **WHEN** `publish --stage --yes` runs with bluesky enabled
+- **THEN** no request is sent to Bluesky
+
+### Requirement: Uncertain outcomes are never retried blindly
+Timeouts, dropped connections, gateway errors (502, 503, 504, 522, 524) and unparsable success bodies SHALL be recorded
+`unknown`; a failed or unknown update of a live article SHALL keep it `published` and record `lastAttempt`. Only HTTP
+429 (honouring `Retry-After`) and refused connections SHALL be retried, at most twice. Only one publish, approve or
+mark run per campaign SHALL hold the state lock at a time.
+
+#### Scenario: Gateway timeout
+- **WHEN** Bluesky returns 504 to the create request
+- **THEN** bluesky is `unknown` and the next run refuses it until `mark`
+
+#### Scenario: Concurrent runs
+- **WHEN** a second `publish --yes` starts while the first holds the lock
+- **THEN** the second exits 1 without sending anything
+
 ### Requirement: Handoffs
-Destinations without API access SHALL get a handoff: final copy printed, a compose URL where one exists (HN, Reddit,
-X, LinkedIn, Threads, Medium, Product Hunt, Substack), and status `handoff`. With `--open` the URL SHALL open in the
-browser and the text SHALL be copied to the clipboard. X and LinkedIn SHALL use API mode only when `api: true` and
+Destinations without API access SHALL get a handoff: a compose or submit URL where one exists (HN, Reddit, X,
+LinkedIn, Threads, Medium, Product Hunt, Substack, Lemmy, newsletter submissions) and status `handoff`. With `--open`
+the URL SHALL open in the default browser and, for `ai: draft` destinations only, the text SHALL be copied. The system
+SHALL NOT script or submit any platform's web page. X and LinkedIn SHALL use API mode only when `api: true` and
 credentials are present.
 
 #### Scenario: HN handoff
 - **WHEN** `hn` is enabled and devto is published at U with title T
-- **THEN** output includes `https://news.ycombinator.com/submitlink?u=<U encoded>&t=<T encoded>` and state records `handoff`
+- **THEN** output includes `https://news.ycombinator.com/submitlink?u=<U encoded>&t=<T encoded>`, nothing is copied, and state records `handoff`
 
 #### Scenario: X without api flag
 - **WHEN** X credentials are set but `x.api` is not true
 - **THEN** X is a handoff with an intent URL containing the encoded text
 
+### Requirement: Assisted handoff walkthrough
+`publish --assist` SHALL require a TTY and, for each handoff not yet published, show the copy per its AI policy, open
+the compose URL, then ask for the permalink, accept it only when it is https on the destination's host, and record it
+`published`; Enter skips and `s` stops.
+
+#### Scenario: Wrong host rejected
+- **WHEN** the user pastes `https://example.com/post` for reddit
+- **THEN** it is rejected and the prompt repeats
+
 ### Requirement: Manual resolution
-`mblast mark <slug> <destination> --url <U>` SHALL record the destination `published` with that URL; `--not-posted`
-SHALL clear an `unknown` status so the next publish retries it.
+`mblast mark <slug> <destination> --url <U>` SHALL record the destination `published` with that URL and the approved
+hash; `--not-posted` SHALL clear an `unknown` status, and on an entry that has a remote id SHALL restore it so the next
+publish updates rather than creates.
 
 #### Scenario: Record a handoff
 - **WHEN** `mblast mark search hn --url https://news.ycombinator.com/item?id=1` runs
 - **THEN** state shows hn `published` with that URL
+
+#### Scenario: Not posted after an update timeout
+- **WHEN** devto id 7 is live, an update times out, and `mark search devto --not-posted` runs
+- **THEN** the next publish sends `PUT /api/articles/7` and no `POST`
+
+### Requirement: Launch checklist
+`mblast launch` SHALL keep a one-time-per-project checklist of launch directories (DevHunt, AlternativeTo, Uneed,
+Indie Hackers, Product Hunt) with submit URLs and listing status; `--mark <directory> --url <U>` SHALL record a listing.
+
+#### Scenario: Record a listing
+- **WHEN** `mblast launch --mark devhunt --url https://devhunt.org/tool/x` runs
+- **THEN** `mblast launch` shows devhunt listed with that URL
 
 ### Requirement: Independent failures, exit code and status
 A failure on one destination SHALL NOT stop the others. Publish SHALL print one line per destination and exit 1 if any
