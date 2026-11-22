@@ -77,7 +77,8 @@ function runProgram(
       reject(new Error(`${cmd} ${reason}${tail ? `:\n${tail}` : ""}`));
     },
   );
-  if (opts.input !== undefined) child.stdin?.end(opts.input);
+  // Always close stdin: agent CLIs such as `omp -p` wait for EOF on a piped stdin before starting.
+  child.stdin?.end(opts.input ?? "");
   return promise;
 }
 
