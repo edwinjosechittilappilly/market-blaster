@@ -8,7 +8,10 @@ import type { IO } from "./io.ts";
 import { measureBody } from "./limits.ts";
 import { isDestinationId, linksIn, resolveLinks } from "./links.ts";
 import { approvalHash, loadState, needsApproval, updateState, withStateLock } from "./state.ts";
-import { HttpError, UserError, type CampaignState, type Config, type Ctx, type Destination, type DestinationId, type Draft, type Env, type ResolvedPost } from "./types.ts";
+import {
+  HttpError, UserError, type CampaignState, type Config, type Ctx, type Destination,
+  type DestinationId, type Draft, type Env, type ResolvedPost,
+} from "./types.ts";
 
 interface PublishOptions {
   config: Config; campaign: string; env: Env; io: IO;
@@ -18,17 +21,30 @@ interface PublishOptions {
 
 function publishedUrls(state: CampaignState): Partial<Record<DestinationId, string>> {
   const urls: Partial<Record<DestinationId, string>> = {};
-  for (const [id, entry] of Object.entries(state)) if (entry.status === "published" && entry.url && isDestinationId(id)) urls[id] = entry.url;
+  for (const [id, entry] of Object.entries(state)) {
+    if (entry.status === "published" && entry.url && isDestinationId(id)) urls[id] = entry.url;
+  }
   return urls;
 }
-/** Destinations that link to (and so depend on) the canonical home: article canonical fields, HN/Reddit links, Discussions. */
+/** Destinations that link to (and so depend on) the canonical home:
+ * article canonical fields, HN/Reddit links, Discussions.
+ */
 const usesCanonical = (id: DestinationId) => ["devto", "hashnode", "hn", "reddit", "github-discussion"].includes(id);
 export function resolved(draft: Draft, config: Config, state: CampaignState, pending: boolean): ResolvedPost {
   const urls: Record<string, string> = { ...publishedUrls(state) };
   if (pending) for (const id of config.destinations) if (!urls[id]) urls[id] = `<pending:${id}>`;
   const home = config.canonicalHome;
-  const canonical = usesCanonical(draft.destination) ? draft.canonical ?? (home && home !== draft.destination ? (isDestinationId(home) ? urls[home] : home) : undefined) : undefined;
-  return { destination: draft.destination, title: draft.title ? resolveLinks(draft.title, urls) : undefined, tags: draft.tags, body: resolveLinks(draft.body, urls), canonical: canonical ? resolveLinks(canonical, urls) : undefined, contentHash: approvalHash(draft, config) };
+  const canonical = usesCanonical(draft.destination)
+    ? draft.canonical ?? (home && home !== draft.destination ? (isDestinationId(home) ? urls[home] : home) : undefined)
+    : undefined;
+  return {
+    destination: draft.destination,
+    title: draft.title ? resolveLinks(draft.title, urls) : undefined,
+    tags: draft.tags,
+    body: resolveLinks(draft.body, urls),
+    canonical: canonical ? resolveLinks(canonical, urls) : undefined,
+    contentHash: approvalHash(draft, config),
+  };
 }
 function connectionRefused(err: unknown): boolean {
   const e = err as { code?: string; cause?: { code?: string } };
@@ -59,17 +75,22 @@ function handoffBlock(id: DestinationId, post: ResolvedPost, info: { url?: strin
     : ai === "outline" ? `talking points, write the post yourself:\n         ${previewText(post.body)}`
     : previewText(post.body);
   const title = post.title ? `\n  title: ${post.title}` : "";
-  return `${id}  handoff  (compose link, prefills ${prefills})${title}\n  text:  ${text}${url ? `\n  open:  ${url}` : ""}`;
+  return `${id}  handoff  (compose link, prefills ${prefills})${title}\n  text:  ${text}` +
+    `${url ? `\n  open:  ${url}` : ""}`;
 }
 
 function apiBlock(id: DestinationId, post: ResolvedPost, payload: unknown, cost?: number): string {
-  const article = id === "devto" && payload && typeof payload === "object" && "article" in payload && payload.article && typeof payload.article === "object" ? payload.article : undefined;
+  const article = id === "devto" && payload && typeof payload === "object" && "article" in payload &&
+    payload.article && typeof payload.article === "object" ? payload.article : undefined;
   const published = article && "published" in article && article.published === true;
   const tags = article && "tags" in article ? article.tags : [];
   const description = article ? `article, ${published ? "published" : "unpublished"} on DEV` : META[id].kind;
   const fields = payload && typeof payload === "object" ? Object.keys(payload).join(", ") : "";
-  const sends = article ? `POST https://dev.to/api/articles  {title, body_markdown, published:${published}, tags:${JSON.stringify(tags)}}` : `request fields: {${fields}}`;
-  return `${id}  api  (${description})${cost === undefined ? "" : ` expected cost $${cost.toFixed(2)}`}${post.title ? `\n  title: ${post.title}` : ""}\n  text:  ${previewText(post.body)}\n  sends: ${sends}`;
+  const sends = article
+    ? `POST https://dev.to/api/articles  {title, body_markdown, published:${published}, tags:${JSON.stringify(tags)}}`
+    : `request fields: {${fields}}`;
+  return `${id}  api  (${description})${cost === undefined ? "" : ` expected cost $${cost.toFixed(2)}`}` +
+    `${post.title ? `\n  title: ${post.title}` : ""}\n  text:  ${previewText(post.body)}\n  sends: ${sends}`;
 }
 
 export async function publishCampaign(opts: PublishOptions): Promise<number> {
@@ -78,16 +99,26 @@ export async function publishCampaign(opts: PublishOptions): Promise<number> {
 
 async function publishLocked(opts: PublishOptions): Promise<number> {
   const { config, campaign, env, io, adapters } = opts;
-  const ctx: Ctx = { config: { ...config, mastodon: { ...config.mastodon } }, env, fetch: io.fetch, timeoutMs: 30_000, run: io.run, crosspost: opts.crosspost };
-  const checkOnly = opts.stage ? config.destinations.filter((id) => (id === "devto" || id === "hashnode") && (!opts.only || opts.only.includes(id))) : opts.only;
+  const ctx: Ctx = {
+    config: { ...config, mastodon: { ...config.mastodon } }, env, fetch: io.fetch, timeoutMs: 30_000,
+    run: io.run, crosspost: opts.crosspost,
+  };
+  const checkOnly = opts.stage
+    ? config.destinations.filter(
+      (id) => (id === "devto" || id === "hashnode") && (!opts.only || opts.only.includes(id)),
+    )
+    : opts.only;
   const checked = checkCampaign(config, campaign, { only: checkOnly });
   for (const finding of checked.findings) io.out(`${finding.destination}: ${finding.level}: ${finding.message}`);
   if (checked.findings.some((finding) => finding.level === "error")) return 1;
-  const order = publishOrder(config.destinations.filter((id) => !opts.only || opts.only.includes(id)), config.canonicalHome);
+  const order = publishOrder(
+    config.destinations.filter((id) => !opts.only || opts.only.includes(id)), config.canonicalHome,
+  );
   const state = loadState(campaign);
   const home = config.canonicalHome;
   // Published title from state once the home is live; before that (dry run, first run) the approved home draft's title.
-  const homeTitle = home && isDestinationId(home) ? (state[home]?.title ?? checked.drafts.get(home)?.title) : config.hn?.title;
+  const homeTitle = home && isDestinationId(home)
+    ? (state[home]?.title ?? checked.drafts.get(home)?.title) : config.hn?.title;
   const hnDraft: Draft = { destination: "hn", title: homeTitle, evidence: [], body: "", path: "" };
   const draftFor = (id: DestinationId) => id === "hn" ? hnDraft : checked.drafts.get(id)!;
   const eligible: DestinationId[] = [];
@@ -98,13 +129,25 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
     if (draft?.skip) { io.out(`${id}: skipped (${draft.skip})`); continue; }
     if (opts.stage && id !== "devto" && id !== "hashnode") { io.out(`${id}: skipped (not staged)`); continue; }
     if (opts.stage && entry?.status === "published") { io.out(`${id}: skipped (already published)`); continue; }
-    if (needsApproval(id) && entry?.approvedHash !== approvalHash(draft, config)) { io.out(`${id}: refused: draft is not approved or has changed`); failed = true; continue; }
-    if (entry?.status === "unknown" || entry?.status === "pending" || entry?.lastAttempt?.status === "unknown") { io.out(`${id}: refused: unknown outcome; resolve with mark`); failed = true; continue; }
-    if (entry?.status === "published" && (id === "hn" || entry.contentHash === approvalHash(draft, config))) { io.out(`${id}: published (skipped)`); continue; }
+    if (needsApproval(id) && entry?.approvedHash !== approvalHash(draft, config)) {
+      io.out(`${id}: refused: draft is not approved or has changed`); failed = true; continue;
+    }
+    if (entry?.status === "unknown" || entry?.status === "pending" || entry?.lastAttempt?.status === "unknown") {
+      io.out(`${id}: refused: unknown outcome; resolve with mark`); failed = true; continue;
+    }
+    if (entry?.status === "published" && (id === "hn" || entry.contentHash === approvalHash(draft, config))) {
+      io.out(`${id}: published (skipped)`); continue;
+    }
     const mode = modeOf(id, config, env);
-    if (entry?.status === "handoff" && mode.mode === "api" && !opts.force) { io.out(`${id}: refused: prior handoff; mark it or use --force`); failed = true; continue; }
-    if (entry?.status === "published" && META[id].kind === "social" && !opts.force) { io.out(`${id}: refused: changed social post requires --force`); failed = true; continue; }
-    if (mode.mode === "missing") { io.out(`${id}: refused: missing ${mode.missing.join(", ")}`); failed = true; continue; }
+    if (entry?.status === "handoff" && mode.mode === "api" && !opts.force) {
+      io.out(`${id}: refused: prior handoff; mark it or use --force`); failed = true; continue;
+    }
+    if (entry?.status === "published" && META[id].kind === "social" && !opts.force) {
+      io.out(`${id}: refused: changed social post requires --force`); failed = true; continue;
+    }
+    if (mode.mode === "missing") {
+      io.out(`${id}: refused: missing ${mode.missing.join(", ")}`); failed = true; continue;
+    }
     eligible.push(id);
   }
   if (!opts.yes) {
@@ -114,10 +157,16 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
       const mode = modeOf(id, config, env).mode;
       const cost = mode === "api" ? adapter.cost?.(post) : undefined;
       try {
-        const payload = mode === "handoff" ? adapter.handoff?.(post, ctx) : adapter.payload(post, ctx, { stage: !!opts.stage });
-        const output = opts.json ? JSON.stringify({ destination: id, mode, post, payload, ...(cost === undefined ? {} : { cost }) }) : mode === "handoff" ? handoffBlock(id, post, payload as { url?: string; prefills: string }) : apiBlock(id, post, payload, cost);
+        const payload = mode === "handoff"
+          ? adapter.handoff?.(post, ctx) : adapter.payload(post, ctx, { stage: !!opts.stage });
+        const output = opts.json
+          ? JSON.stringify({ destination: id, mode, post, payload, ...(cost === undefined ? {} : { cost }) })
+          : mode === "handoff" ? handoffBlock(id, post, payload as { url?: string; prefills: string })
+          : apiBlock(id, post, payload, cost);
         io.out(redact(output, env, ALL_ENV_VARS));
-      } catch (err) { io.out(`${id}: error: ${redact(String((err as Error).message ?? err), env, ALL_ENV_VARS)}`); failed = true; }
+      } catch (err) {
+        io.out(`${id}: error: ${redact(String((err as Error).message ?? err), env, ALL_ENV_VARS)}`); failed = true;
+      }
     }
     return failed ? 1 : 0;
   }
@@ -127,55 +176,84 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
       try {
         if (adapters[id].verify) await adapters[id].verify!(ctx);
         else io.out(`${id}: preflight: verify unavailable (no read check available)`);
-      } catch (err) { io.out(`${id}: preflight failed: ${redact(String((err as Error).message ?? err), env, ALL_ENV_VARS)}`); preflightFailed = true; }
+      } catch (err) {
+        io.out(`${id}: preflight failed: ${redact(String((err as Error).message ?? err), env, ALL_ENV_VARS)}`);
+        preflightFailed = true;
+      }
     }
   }
   for (const id of eligible) {
     const draft = draftFor(id);
     const length = measureBody(id, resolveLinks(draft.body, publishedUrls(state), { worstCase: true }), ctx.config);
-    if (length && length.length > length.max) { io.out(`${id}: preflight failed: ${length.length}/${length.max} ${length.unit}`); preflightFailed = true; }
+    if (length && length.length > length.max) {
+      io.out(`${id}: preflight failed: ${length.length}/${length.max} ${length.unit}`); preflightFailed = true;
+    }
   }
   if (preflightFailed) return 1;
   for (const id of eligible) {
     const draft = draftFor(id);
     if (id === "hn") {
-      draft.title = home && isDestinationId(home) ? state[home]?.title ?? checked.drafts.get(home)?.title : config.hn?.title;
-      if (!draft.title) { io.out(home && !isDestinationId(home) ? "hn: skipped: canonical title unavailable; set hn.title" : "hn: skipped: canonical home draft title unavailable"); failed = true; continue; }
+      draft.title = home && isDestinationId(home)
+        ? state[home]?.title ?? checked.drafts.get(home)?.title : config.hn?.title;
+      if (!draft.title) {
+        io.out(home && !isDestinationId(home) ? "hn: skipped: canonical title unavailable; set hn.title"
+          : "hn: skipped: canonical home draft title unavailable");
+        failed = true; continue;
+      }
     }
     const entry = state[id];
     const adapter = adapters[id];
-    const dependencies = [...linksIn(draft.title ?? ""), ...linksIn(draft.body), ...(usesCanonical(id) ? linksIn(draft.canonical ?? "") : [])];
+    const dependencies = [
+      ...linksIn(draft.title ?? ""), ...linksIn(draft.body),
+      ...(usesCanonical(id) ? linksIn(draft.canonical ?? "") : []),
+    ];
     if (!draft.canonical && usesCanonical(id) && home && isDestinationId(home) && home !== id) dependencies.push(home);
-    const blocked = dependencies.find((target) => !isDestinationId(target) || state[target]?.status !== "published" || !state[target]?.url);
+    const blocked = dependencies.find(
+      (target) => !isDestinationId(target) || state[target]?.status !== "published" || !state[target]?.url,
+    );
     if (blocked || (id === "hn" && (!home || (!isDestinationId(home) && !/^https?:\/\//i.test(home))))) {
       const error = blocked ? `link target ${blocked} is not published` : "canonical home is not published";
-      updateState(campaign, state, id, { status: "blocked", error }); io.out(`${id}: blocked: ${error}`); failed = true; continue;
+      updateState(campaign, state, id, { status: "blocked", error });
+      io.out(`${id}: blocked: ${error}`); failed = true; continue;
     }
     const post = resolved(draft, config, state, false);
     if (modeOf(id, config, env).mode === "handoff") {
       try {
         if (!adapter.handoff) throw new Error("adapter has no handoff");
         const info = adapter.handoff(post, ctx);
-        if (id === "newsletter") for (const target of newsletterTargets(config)) io.out(`${target.name}: compose ${target.url}`);
+        if (id === "newsletter") {
+          for (const target of newsletterTargets(config)) io.out(`${target.name}: compose ${target.url}`);
+        }
         if (opts.open) {
           if (META[id].ai === "draft") {
-            const command = process.platform === "darwin" ? ["pbcopy"] : process.platform === "win32" ? ["clip"] : ["xclip", "-selection", "clipboard"];
-            try { await io.run(command[0], command.slice(1), { input: post.body }); } catch (err) { io.out(`${id}: warning: clipboard: ${(err as Error).message}`); }
+            const command = process.platform === "darwin" ? ["pbcopy"]
+              : process.platform === "win32" ? ["clip"] : ["xclip", "-selection", "clipboard"];
+            try { await io.run(command[0], command.slice(1), { input: post.body }); }
+            catch (err) { io.out(`${id}: warning: clipboard: ${(err as Error).message}`); }
           }
           if (info.url) {
-            const command = process.platform === "darwin" ? ["open", info.url] : process.platform === "win32" ? ["cmd", "/c", "start", "", info.url] : ["xdg-open", info.url];
-            try { await io.run(command[0], command.slice(1)); } catch (err) { io.out(`${id}: warning: open: ${(err as Error).message}`); }
+            const command = process.platform === "darwin" ? ["open", info.url]
+              : process.platform === "win32" ? ["cmd", "/c", "start", "", info.url] : ["xdg-open", info.url];
+            try { await io.run(command[0], command.slice(1)); }
+            catch (err) { io.out(`${id}: warning: open: ${(err as Error).message}`); }
           }
         }
-        if (entry?.status !== "published") updateState(campaign, state, id, { status: "handoff", contentHash: post.contentHash, error: undefined });
+        if (entry?.status !== "published") {
+          updateState(campaign, state, id, { status: "handoff", contentHash: post.contentHash, error: undefined });
+        }
         io.out(redact(handoffBlock(id, post, info), env, ALL_ENV_VARS));
-      } catch (err) { const error = redact(String((err as Error).message ?? err), env, ALL_ENV_VARS); updateState(campaign, state, id, { status: "failed", error }); io.out(`${id}: failed: ${error}`); failed = true; }
+      } catch (err) {
+        const error = redact(String((err as Error).message ?? err), env, ALL_ENV_VARS);
+        updateState(campaign, state, id, { status: "failed", error }); io.out(`${id}: failed: ${error}`); failed = true;
+      }
       continue;
     }
     const stage = !!opts.stage;
     const updating = !!entry?.id && META[id].kind === "article";
     if (updating && (entry?.status === "published" || entry?.status === "staged")) {
-      updateState(campaign, state, id, { lastAttempt: { status: "unknown", error: "request outcome not yet known" }, error: undefined });
+      updateState(campaign, state, id, {
+        lastAttempt: { status: "unknown", error: "request outcome not yet known" }, error: undefined,
+      });
     } else updateState(campaign, state, id, { status: "pending", error: undefined });
     try {
       let result;
@@ -195,12 +273,17 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
         }
       }
       const status = result.staged || stage ? "staged" : "published";
-      updateState(campaign, state, id, { status, id: result.id, url: result.url, title: post.title, contentHash: post.contentHash, error: undefined, lastAttempt: undefined });
+      updateState(campaign, state, id, {
+        status, id: result.id, url: result.url, title: post.title, contentHash: post.contentHash,
+        error: undefined, lastAttempt: undefined,
+      });
       io.out(`${id}: ${status} ${result.url}`);
     } catch (err) {
       const status = uncertain(err) ? "unknown" : "failed";
       const error = redact(String((err as Error).message ?? err), env, ALL_ENV_VARS);
-      if (updating && (entry?.status === "published" || entry?.status === "staged")) updateState(campaign, state, id, { error, lastAttempt: { status, error } });
+      if (updating && (entry?.status === "published" || entry?.status === "staged")) {
+        updateState(campaign, state, id, { error, lastAttempt: { status, error } });
+      }
       else updateState(campaign, state, id, { status, error });
       io.out(`${id}: ${status}: ${error}`); failed = true;
     }

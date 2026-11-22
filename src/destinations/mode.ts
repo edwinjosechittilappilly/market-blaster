@@ -17,7 +17,9 @@ export function modeOf(id: DestinationId, config: Config, env: Env): ModeInfo {
   if (meta.kind === "handoff") return { mode: "handoff", missing: [] };
   const optedIn = !meta.optInApi || config[id as "x" | "linkedin"].api === true;
   // Not opted in: a deliberate handoff, so API variables are not "missing".
-  if (!optedIn) return { mode: "handoff", missing: [], note: `handoff by choice; set ${id}.api: true to post through the API` };
+  if (!optedIn) {
+    return { mode: "handoff", missing: [], note: `handoff by choice; set ${id}.api: true to post through the API` };
+  }
   const missing = meta.env.filter((k) => !env[k]);
   if (id === "mastodon" && !(env.MASTODON_HOST || config.mastodon.host)) missing.push("MASTODON_HOST or mastodon.host");
   if (id === "hashnode" && !config.hashnode.publicationId) missing.push("hashnode.publicationId");

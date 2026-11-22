@@ -58,16 +58,27 @@ export async function run(args: string[], io: IO, options: Options = {}): Promis
   const set = options.set ?? keychainSet;
   if (action === "set") {
     const key = rest[0];
-    if (!key || !AUTH_ENV_VARS.includes(key)) throw new UserError(`Unknown credential key; known: ${AUTH_ENV_VARS.join(", ")}`);
-    if (rest.length > 2 || (rest[1] && rest[1] !== "--stdin")) throw new UserError("Usage: mblast auth set <KEY> [--stdin]");
+    if (!key || !AUTH_ENV_VARS.includes(key)) {
+      throw new UserError(`Unknown credential key; known: ${AUTH_ENV_VARS.join(", ")}`);
+    }
+    if (rest.length > 2 || (rest[1] && rest[1] !== "--stdin")) {
+      throw new UserError("Usage: mblast auth set <KEY> [--stdin]");
+    }
     const value = await (options.input ?? readSecret)(rest[1] === "--stdin");
     if (!value) throw new UserError("Credential cannot be empty");
     try { set(key, value); } catch { throw new UserError(`Could not save ${key} in Keychain; on non-macOS use .env`); }
     io.out(`Saved ${key} in Keychain`);
     return 0;
   }
-  if (action !== "list" && action !== "linkedin" || rest.length) throw new UserError("Usage: mblast auth set <KEY> [--stdin] | list | linkedin");
-  const { env, sources } = loadEnvWithSources(root ? dirname(root) : io.cwd, io.env, get, action === "linkedin" ? ["LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET", "LINKEDIN_ACCESS_TOKEN", "LINKEDIN_TOKEN_ISSUED"] : undefined);
+  if (action !== "list" && action !== "linkedin" || rest.length) {
+    throw new UserError("Usage: mblast auth set <KEY> [--stdin] | list | linkedin");
+  }
+  const { env, sources } = loadEnvWithSources(
+    root ? dirname(root) : io.cwd, io.env, get,
+    action === "linkedin"
+      ? ["LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET", "LINKEDIN_ACCESS_TOKEN", "LINKEDIN_TOKEN_ISSUED"]
+      : undefined,
+  );
   if (action === "list") {
     for (const key of AUTH_ENV_VARS) io.out(`${key}: ${sources[key] ?? "unset"}`);
     return 0;
@@ -76,7 +87,9 @@ export async function run(args: string[], io: IO, options: Options = {}): Promis
   const clientSecret = env.LINKEDIN_CLIENT_SECRET;
   if (!clientId || !clientSecret) throw new UserError("Set LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET first");
   const state = randomBytes(32).toString("hex");
-  const params = new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: REDIRECT, state, scope: "openid profile w_member_social" });
+  const params = new URLSearchParams({
+    response_type: "code", client_id: clientId, redirect_uri: REDIRECT, state, scope: "openid profile w_member_social",
+  });
   const url = `https://www.linkedin.com/oauth/v2/authorization?${params.toString().replace(/\+/g, "%20")}`;
   const server = createServer();
   let timer: NodeJS.Timeout | undefined;
@@ -88,7 +101,11 @@ export async function run(args: string[], io: IO, options: Options = {}): Promis
         if (callback.pathname !== "/callback") { res.writeHead(404).end(); return; }
         if (callback.searchParams.get("state") !== state) { res.writeHead(401).end("Invalid state"); return; }
         const code = callback.searchParams.get("code");
-        if (!code) { res.writeHead(400).end("Authorization failed"); reject(new UserError("LinkedIn authorization was declined or failed")); return; }
+        if (!code) {
+          res.writeHead(400).end("Authorization failed");
+          reject(new UserError("LinkedIn authorization was declined or failed"));
+          return;
+        }
         res.end("Authorization received. You can close this window.");
         resolve(code);
       });
@@ -98,26 +115,37 @@ export async function run(args: string[], io: IO, options: Options = {}): Promis
         io.out(url);
         const platform = options.platform ?? process.platform;
         const opener = platform === "darwin" ? "open" : platform === "linux" ? "xdg-open" : undefined;
-        if (opener) void io.run(opener, [url]).catch(() => io.err("Could not open browser; use the authorization URL above"));
+        if (opener) {
+          void io.run(opener, [url]).catch(() => io.err("Could not open browser; use the authorization URL above"));
+        }
       });
     });
     let response: Response;
     try {
       response = await io.fetch("https://www.linkedin.com/oauth/v2/accessToken", {
         method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: REDIRECT, client_id: clientId, client_secret: clientSecret }),
+        body: new URLSearchParams({
+          grant_type: "authorization_code", code, redirect_uri: REDIRECT,
+          client_id: clientId, client_secret: clientSecret,
+        }),
         signal: AbortSignal.timeout(15_000), redirect: "error",
       });
     } catch { throw new UserError("LinkedIn token exchange failed"); }
     if (!response.ok) throw new UserError(`LinkedIn token exchange failed (HTTP ${response.status})`);
     let data: { access_token?: unknown; expires_in?: unknown };
-    try { data = await response.json() as typeof data; } catch { throw new UserError("Invalid LinkedIn token response"); }
-    if (typeof data.access_token !== "string" || !data.access_token || typeof data.expires_in !== "number" || !Number.isFinite(data.expires_in) || data.expires_in <= 0) throw new UserError("Invalid LinkedIn token response");
+    try { data = await response.json() as typeof data; }
+    catch { throw new UserError("Invalid LinkedIn token response"); }
+    if (
+      typeof data.access_token !== "string" || !data.access_token || typeof data.expires_in !== "number"
+      || !Number.isFinite(data.expires_in) || data.expires_in <= 0
+    ) throw new UserError("Invalid LinkedIn token response");
     const now = (options.now ?? (() => new Date()))();
     try { set("LINKEDIN_ACCESS_TOKEN", data.access_token); set("LINKEDIN_TOKEN_ISSUED", now.toISOString()); }
     catch { throw new UserError("Could not save LinkedIn credentials in Keychain; on non-macOS use .env"); }
     for (const key of ["LINKEDIN_ACCESS_TOKEN", "LINKEDIN_TOKEN_ISSUED"]) {
-      if (sources[key] && sources[key] !== "keychain") io.err(`${key} is overridden by ${sources[key]}; remove it there`);
+      if (sources[key] && sources[key] !== "keychain") {
+        io.err(`${key} is overridden by ${sources[key]}; remove it there`);
+      }
     }
     io.out(`LinkedIn token expires ${new Date(now.getTime() + data.expires_in * 1000).toISOString()}`);
     return 0;

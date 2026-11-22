@@ -31,7 +31,9 @@ const COMMANDS: Record<string, { summary: string; run: Command }> = {
     run: publish,
   },
   mark: { summary: "record a manual outcome: mark <slug> <destination> --url U | --not-posted", run: mark },
-  launch: { summary: "show project launch checklist or record a listing: launch [--mark <directory> --url U]", run: launch },
+  launch: {
+    summary: "show project launch checklist or record a listing: launch [--mark <directory> --url U]", run: launch,
+  },
   status: { summary: "show what was published where: status <slug>", run: status },
   "install-skill": { summary: "link the drafting skill into ~/.agents/skills and ~/.claude/skills", run: installSkill },
 };
@@ -67,7 +69,8 @@ function runProgram(
     (error, stdout, stderr) => {
       if (!error) return resolve(stdout);
       // error.message repeats the full argv (possibly a whole prompt), so build the reason from the exit status only.
-      const reason = error.killed && opts.timeoutMs ? `timed out after ${opts.timeoutMs / 1000}s` : `exited with ${error.code ?? error.signal}`;
+      const reason = error.killed && opts.timeoutMs
+        ? `timed out after ${opts.timeoutMs / 1000}s` : `exited with ${error.code ?? error.signal}`;
       const tail = stderr.trim().split("\n").slice(-20).join("\n");
       reject(new Error(`${cmd} ${reason}${tail ? `:\n${tail}` : ""}`));
     },

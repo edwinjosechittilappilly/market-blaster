@@ -54,7 +54,12 @@ export function loadEnvWithSources(
   return { env, sources };
 }
 
-export function loadEnv(root: string, processEnv: Env = process.env, keychain?: (key: string) => string | undefined, keys?: readonly string[]): Env {
+export function loadEnv(
+  root: string,
+  processEnv: Env = process.env,
+  keychain?: (key: string) => string | undefined,
+  keys?: readonly string[],
+): Env {
   return loadEnvWithSources(root, processEnv, keychain, keys).env;
 }
 

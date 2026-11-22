@@ -6,8 +6,13 @@ import { run as draft } from "./draft.ts";
 import { run as check } from "./check.ts";
 
 export const run: Command = async (args, io) => {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { range: { type: "string" }, pr: { type: "string" }, version: { type: "string" } } });
-  if (positionals.length !== 1 || !values.range) throw new UserError("usage: mblast new <slug> --range A..B [--pr N] [--version V]");
+  const { values, positionals } = parseArgs({
+    args, allowPositionals: true,
+    options: { range: { type: "string" }, pr: { type: "string" }, version: { type: "string" } },
+  });
+  if (positionals.length !== 1 || !values.range) {
+    throw new UserError("usage: mblast new <slug> --range A..B [--pr N] [--version V]");
+  }
   const slug = positionals[0];
   const briefArgs = [slug, "--range", values.range];
   if (values.pr) briefArgs.push("--pr", values.pr);

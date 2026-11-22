@@ -4,7 +4,8 @@ import { CONFIG_FILE } from "../config.ts";
 import { ALL_ENV_VARS } from "../destinations/meta.ts";
 import type { Command } from "../io.ts";
 
-const STARTER = `# Market Blaster config. Guide: https://github.com/edwinjosechittilappilly/market-blaster/blob/main/docs/guide.md
+const STARTER = `# Market Blaster config. Guide: https://github.com/edwinjosechittilappilly/market-blaster/` +
+`blob/main/docs/guide.md
 brand:
   name: My Project
   pitch: One sentence on what it does and for whom.
@@ -88,7 +89,11 @@ export const run: Command = async (_args, io) => {
 
   const envExample = join(io.cwd, ".env.example");
   if (!existsSync(envExample)) {
-    const lines = ["# Prefer macOS Keychain: run mblast auth set <KEY>.", "# Alternatively copy to .env (gitignored). Shell values win over .env and Keychain.", ""];
+    const lines = [
+      "# Prefer macOS Keychain: run mblast auth set <KEY>.",
+      "# Alternatively copy to .env (gitignored). Shell values win over .env and Keychain.",
+      "",
+    ];
     for (const key of ALL_ENV_VARS) lines.push(`# ${ENV_DOC[key] ?? ""}`, `${key}=`, "");
     writeFileSync(envExample, lines.join("\n"));
     io.out("wrote .env.example");

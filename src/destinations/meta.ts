@@ -24,9 +24,13 @@ export interface DestinationMeta {
 
 export const META: Record<DestinationId, DestinationMeta> = {
   devto: { kind: "article", env: ["DEV_API_KEY"], needsTitle: true, optInApi: false, hasHandoff: false, ai: "draft" },
-  hashnode: { kind: "article", env: ["HASHNODE_TOKEN"], needsTitle: true, optInApi: false, hasHandoff: false, ai: "draft" },
+  hashnode: {
+    kind: "article", env: ["HASHNODE_TOKEN"], needsTitle: true, optInApi: false, hasHandoff: false, ai: "draft",
+  },
   gist: { kind: "article", env: ["GITHUB_TOKEN"], needsTitle: true, optInApi: false, hasHandoff: false, ai: "draft" },
-  "github-discussion": { kind: "article", env: ["GITHUB_TOKEN"], needsTitle: true, optInApi: false, hasHandoff: false, ai: "draft" },
+  "github-discussion": {
+    kind: "article", env: ["GITHUB_TOKEN"], needsTitle: true, optInApi: false, hasHandoff: false, ai: "draft",
+  },
   bluesky: {
     kind: "social",
     env: ["BLUESKY_IDENTIFIER", "BLUESKY_APP_PASSWORD"],
@@ -35,7 +39,9 @@ export const META: Record<DestinationId, DestinationMeta> = {
     hasHandoff: false,
     ai: "draft",
   },
-  mastodon: { kind: "social", env: ["MASTODON_TOKEN"], needsTitle: false, optInApi: false, hasHandoff: false, ai: "draft" },
+  mastodon: {
+    kind: "social", env: ["MASTODON_TOKEN"], needsTitle: false, optInApi: false, hasHandoff: false, ai: "draft",
+  },
   linkedin: {
     kind: "social",
     env: ["LINKEDIN_ACCESS_TOKEN"],
@@ -52,7 +58,9 @@ export const META: Record<DestinationId, DestinationMeta> = {
     hasHandoff: true,
     ai: "draft",
   },
-  nostr: { kind: "social", env: ["NOSTR_PRIVATE_KEY"], needsTitle: false, optInApi: false, hasHandoff: false, ai: "draft" },
+  nostr: {
+    kind: "social", env: ["NOSTR_PRIVATE_KEY"], needsTitle: false, optInApi: false, hasHandoff: false, ai: "draft",
+  },
   hn: { kind: "handoff", env: [], needsTitle: false, optInApi: false, hasHandoff: true, ai: "none" },
   reddit: { kind: "handoff", env: [], needsTitle: true, optInApi: false, hasHandoff: true, ai: "outline" },
   threads: { kind: "handoff", env: [], needsTitle: false, optInApi: false, hasHandoff: true, ai: "draft" },

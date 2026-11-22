@@ -9,7 +9,10 @@ import { requestJson, redactAdapter } from "./http.ts";
 type Strategy = NonNullable<Ctx["crosspost"]> extends (...args: never[]) => infer S ? S : never;
 function strategy(id: "x" | "linkedin" | "nostr", ctx: Ctx): Strategy {
   return ctx.crosspost ? ctx.crosspost(id, ctx.env) : (id === "x"
-    ? new TwitterStrategy({ accessTokenKey: ctx.env.X_ACCESS_TOKEN!, accessTokenSecret: ctx.env.X_ACCESS_SECRET!, apiConsumerKey: ctx.env.X_API_KEY!, apiConsumerSecret: ctx.env.X_API_SECRET! })
+    ? new TwitterStrategy({
+      accessTokenKey: ctx.env.X_ACCESS_TOKEN!, accessTokenSecret: ctx.env.X_ACCESS_SECRET!,
+      apiConsumerKey: ctx.env.X_API_KEY!, apiConsumerSecret: ctx.env.X_API_SECRET!,
+    })
     : id === "nostr"
       ? new NostrStrategy({ privateKey: ctx.env.NOSTR_PRIVATE_KEY!, relays: ctx.config.nostr.relays })
       : new LinkedInStrategy({ accessToken: ctx.env.LINKEDIN_ACCESS_TOKEN! })) as unknown as Strategy;
@@ -26,7 +29,8 @@ async function create(id: "x" | "linkedin" | "nostr", text: string, ctx: Ctx) {
       const postId = result.data?.id ?? result.id;
       if (!postId) throw new Error("response has no post id");
       const note = id === "nostr" ? client.getUrlFromResponse?.(response as never)?.replace(/^nostr:/, "") : undefined;
-      const url = id === "nostr" ? `https://njump.me/${note || postId}` : client.getUrlFromResponse?.(response as never) || "";
+      const url = id === "nostr"
+        ? `https://njump.me/${note || postId}` : client.getUrlFromResponse?.(response as never) || "";
       return { id: String(postId), url };
     } catch (cause) {
       const error = new Error(`${id}: could not interpret successful response`, { cause });
@@ -35,7 +39,9 @@ async function create(id: "x" | "linkedin" | "nostr", text: string, ctx: Ctx) {
     }
   } catch (error) {
     const e = error as { code?: unknown; requestError?: unknown; message?: string };
-    if (typeof e.code === "number" && e.code >= 100 && e.code <= 599) throw new HttpError(e.code, `${id} ${e.code}: ${redactAdapter(e.message ?? "", ctx, id)}`);
+    if (typeof e.code === "number" && e.code >= 100 && e.code <= 599) {
+      throw new HttpError(e.code, `${id} ${e.code}: ${redactAdapter(e.message ?? "", ctx, id)}`);
+    }
     const status = id === "linkedin" && e.message?.match(/^(\d{3}) /);
     if (status) throw new HttpError(Number(status[1]), `${id} ${redactAdapter(e.message ?? "", ctx, id)}`);
     if (e.requestError) throw e.requestError;
@@ -63,10 +69,14 @@ export const linkedin: Destination = {
   create: (post, ctx) => create("linkedin", post.body, ctx),
   handoff: (post) => {
     const url = post.body.match(URL_RE)?.[0];
-    return url ? { url: linkedinShare(url), prefills: "link" } : { url: "https://www.linkedin.com/feed/?shareActive=true", prefills: "none" };
+    return url
+      ? { url: linkedinShare(url), prefills: "link" }
+      : { url: "https://www.linkedin.com/feed/?shareActive=true", prefills: "none" };
   },
   async verify(ctx) {
-    await requestJson(ctx, "linkedin", "https://api.linkedin.com/v2/userinfo", { headers: { authorization: `Bearer ${ctx.env.LINKEDIN_ACCESS_TOKEN ?? ""}` } });
+    await requestJson(ctx, "linkedin", "https://api.linkedin.com/v2/userinfo", {
+      headers: { authorization: `Bearer ${ctx.env.LINKEDIN_ACCESS_TOKEN ?? ""}` },
+    });
   },
 };
 

@@ -22,7 +22,9 @@ export const run: Command = async (args, io) => {
     // Credentials only matter in API mode or when they are what is missing; a handoff by choice needs none.
     const credentialsMatter = info.mode !== "handoff" || info.missing.length > 0;
     if (META[id].env.length && credentialsMatter) {
-      line += `  credentials: ${META[id].env.map((key) => `${key}=${loaded.sources[key] ?? (env[key] ? "gh" : "unset")}`).join(", ")}`;
+      line += `  credentials: ${
+        META[id].env.map((key) => `${key}=${loaded.sources[key] ?? (env[key] ? "gh" : "unset")}`).join(", ")
+      }`;
     }
     if (info.mode === "missing") failures++;
 

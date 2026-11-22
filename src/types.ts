@@ -112,7 +112,10 @@ export interface Ctx {
   timeoutMs: number;
   /** Runs a command and returns stdout; used for `gh auth token`. Injected for tests. */
   run?: (cmd: string, args: string[]) => Promise<string>;
-  crosspost?: (id: "x" | "linkedin" | "nostr", env: Env) => { post(text: string, options: { signal: AbortSignal }): Promise<unknown>; getUrlFromResponse?(response: never): string };
+  crosspost?: (id: "x" | "linkedin" | "nostr", env: Env) => {
+    post(text: string, options: { signal: AbortSignal }): Promise<unknown>;
+    getUrlFromResponse?(response: never): string;
+  };
 }
 
 export interface Published {

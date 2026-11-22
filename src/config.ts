@@ -67,19 +67,26 @@ export function validateConfig(raw: unknown, root: string): Config {
   const newsletter = obj(data.newsletter);
   const targets = newsletter.targets ?? [];
   const allowedTargets = ["console-dev", "javascript-weekly", "golang-weekly", "changelog-news"];
-  if (!Array.isArray(targets) || targets.some((target) => typeof target !== "string" || !allowedTargets.includes(target))) {
+  if (!Array.isArray(targets)
+    || targets.some((target) => typeof target !== "string" || !allowedTargets.includes(target))) {
     throw new UserError(`${CONFIG_FILE}: newsletter.targets contains an unknown target`);
   }
-  if (destinations.includes("newsletter") && targets.length === 0) throw new UserError(`${CONFIG_FILE}: newsletter.targets must list at least one target`);
+  if (destinations.includes("newsletter") && targets.length === 0)
+    throw new UserError(`${CONFIG_FILE}: newsletter.targets must list at least one target`);
   const instance = obj(data.lemmy).instance;
-  if (instance !== undefined && (typeof instance !== "string" || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i.test(instance))) {
+  if (instance !== undefined && (typeof instance !== "string"
+    || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i
+      .test(instance))) {
     throw new UserError(`${CONFIG_FILE}: lemmy.instance must be a bare hostname`);
   }
   const discussion = obj(data.githubDiscussion);
-  if (destinations.includes("github-discussion") && (typeof discussion.repo !== "string" || !/^[^/]+\/[^/]+$/.test(discussion.repo) || typeof discussion.category !== "string" || !discussion.category.trim())) {
+  if (destinations.includes("github-discussion") && (typeof discussion.repo !== "string"
+    || !/^[^/]+\/[^/]+$/.test(discussion.repo)
+    || typeof discussion.category !== "string" || !discussion.category.trim())) {
     throw new UserError(`${CONFIG_FILE}: githubDiscussion.repo (owner/name) and category are required`);
   }
-  if (nostr.relays !== undefined && (!Array.isArray(nostr.relays) || nostr.relays.some((relay) => typeof relay !== "string" || !/^wss:\/\//.test(relay)))) {
+  if (nostr.relays !== undefined && (!Array.isArray(nostr.relays)
+    || nostr.relays.some((relay) => typeof relay !== "string" || !/^wss:\/\//.test(relay)))) {
     throw new UserError(`${CONFIG_FILE}: nostr.relays must be a list of wss URLs`);
   }
 
@@ -97,7 +104,10 @@ export function validateConfig(raw: unknown, root: string): Config {
     hashnode: obj(data.hashnode),
     gist: obj(data.gist),
     githubDiscussion: obj(data.githubDiscussion),
-    nostr: { relays: (nostr.relays as string[] | undefined) ?? ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.nostr.band"] },
+    nostr: {
+      relays: (nostr.relays as string[] | undefined)
+        ?? ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.nostr.band"],
+    },
     lemmy: obj(data.lemmy),
     newsletter: { targets: targets as Config["newsletter"]["targets"] },
     bluesky: obj(data.bluesky),

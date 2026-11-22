@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, linkSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync, linkSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { UserError } from "./types.ts";
 import type { CampaignState, Config, DestinationId, DestinationState, Draft } from "./types.ts";
@@ -112,6 +114,9 @@ export function approvalHash(draft: Draft, config: Config): string {
   const key = draft.destination === "github-discussion" ? "githubDiscussion" : draft.destination;
   const settings = key in config ? config[key as keyof Config] : undefined;
   return createHash("sha256")
-    .update(JSON.stringify([draft.destination, draft.title ?? "", draft.canonical ?? "", draft.tags ?? [], draft.body, draft.skip ?? "", config.canonicalHome ?? "", settings ?? null]))
+    .update(JSON.stringify([
+      draft.destination, draft.title ?? "", draft.canonical ?? "", draft.tags ?? [], draft.body, draft.skip ?? "",
+      config.canonicalHome ?? "", settings ?? null,
+    ]))
     .digest("hex");
 }
