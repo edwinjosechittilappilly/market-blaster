@@ -4,7 +4,7 @@ import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 import { isDestinationId } from "./links.ts";
 import { UserError, type DestinationId } from "./types.ts";
 
-export interface StudioMedia { path: string; alt: string; kind: string }
+export interface StudioMedia { path: string; alt: string; kind: string; cover?: boolean; lang?: string; captions?: string }
 export interface StudioPost {
   platform: string; destination: DestinationId; title?: string; body: string; evidence: string[];
   disclosure?: { text?: string; media?: string; voice?: string }; media: StudioMedia[]; thread?: string[];
@@ -46,7 +46,10 @@ export function loadManifest(root: string): StudioManifest {
       || (post.title !== undefined && typeof post.title !== "string") || typeof post.body !== "string"
       || !strings(post.evidence) || !Array.isArray(post.media)
       || post.media.some((m: unknown) => !object(m) || typeof m.path !== "string" || !m.path
-        || typeof m.alt !== "string" || typeof m.kind !== "string" || !m.kind)
+        || typeof m.alt !== "string" || typeof m.kind !== "string" || !m.kind
+        || (m.cover !== undefined && typeof m.cover !== "boolean")
+        || (m.lang !== undefined && (typeof m.lang !== "string" || !/^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/.test(m.lang)))
+        || (m.captions !== undefined && (m.kind !== "video" || typeof m.captions !== "string" || !/\.vtt$/i.test(m.captions))))
       || (post.thread !== undefined && !strings(post.thread))
       || (post.disclosure !== undefined && (!object(post.disclosure) || Object.entries(post.disclosure).some(([k, v]) =>
         !["text", "media", "voice"].includes(k) || typeof v !== "string")))

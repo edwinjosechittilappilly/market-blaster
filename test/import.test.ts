@@ -76,3 +76,17 @@ test("reports failed media validation after import", async () => {
   writeFileSync(path, readFileSync(path, "utf8").replace(/media\/[^/]+\/img.png/, "media/missing.png"));
   assert.ok(checkCampaign(loadConfig(s.root), s.campaign).findings.some((f) => f.message.includes("missing or not campaign-local")));
 });
+
+test("imports cover and caption metadata and copies the VTT", async () => {
+  const s = setup();
+  writeFileSync(join(s.pkg, "assets/captions.vtt"), "WEBVTT\n");
+  Object.assign(s.manifest.posts[0].media[0], {
+    kind: "video", cover: true, lang: "en-US", captions: "assets/captions.vtt",
+  });
+  s.save();
+  assert.equal(await run([s.pkg], s.io), 0);
+  const media = loadDrafts(s.campaign).get("bluesky")!.media![0];
+  assert.equal(media.cover, true);
+  assert.equal(media.lang, "en-US");
+  assert.equal(readFileSync(join(s.campaign, media.captions!), "utf8"), "WEBVTT\n");
+});

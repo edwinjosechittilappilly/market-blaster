@@ -24,7 +24,33 @@ export function checkCampaign(config: Config, campaign: string, opts: { only?: D
     const draft = drafts.get(destination);
     if (!draft) { add("error", "missing draft"); continue; }
     if (draft.skip) continue;
-    for (const media of draft.media ?? []) {
+    const mediaItems = draft.media ?? [];
+    if (destination === "bluesky") {
+      const images = mediaItems.filter((media) => media.kind === "image");
+      const videos = mediaItems.filter((media) => media.kind === "video");
+      if (mediaItems.filter((media) => media.kind === "vtt" || media.kind === "caption").length > 20)
+        add("error", "Bluesky allows at most 20 captions");
+      if (images.length > 4) add("error", "Bluesky allows at most 4 images");
+      if (videos.length > 1 || (videos.length && images.length)) add("error", "Bluesky allows one video or up to 4 images, not both");
+      if (mediaItems.some((media) => !["image", "video", "vtt", "caption"].includes(media.kind)))
+        add("error", "Bluesky supports images, video and VTT captions only");
+      if (!videos.length && mediaItems.some((media) => media.kind === "vtt" || media.kind === "caption"))
+        add("error", "Bluesky captions require a video");
+    }
+    if (destination === "mastodon" && mediaItems.length) {
+      add("warning", "Mastodon media limits use configured defaults; instance limits are verified at publish preflight");
+      if (mediaItems.length > (config.mastodon.maxMediaAttachments ?? 4)) add("error", "Mastodon media exceeds configured attachment count");
+      if (mediaItems.some((media) => !["image", "video"].includes(media.kind)))
+        add("error", "Mastodon supports image and video attachments only");
+    }
+    if (destination === "linkedin" && config.linkedin.api && !mediaItems.some((media) => media.kind === "pdf" || /\.pdf$/i.test(media.path))) {
+      if (mediaItems.length > 20) add("error", "LinkedIn allows at most 20 images");
+      if (mediaItems.some((media) => media.kind !== "image")) add("error", "LinkedIn API supports image attachments only");
+    }
+    if (destination === "devto" && mediaItems.some((media) => media.cover) && !config.devto.coverUrl)
+      add("warning", "DEV cover requires devto.coverUrl; attach or host the image manually");
+    for (const media of mediaItems.flatMap((item) => item.captions
+      ? [item, { path: item.captions, alt: item.alt, kind: "vtt" }] : [item])) {
       if (!media.alt.trim()) add("error", `media ${media.path}: missing alt text`);
       try {
         const base = realpathSync(campaign);
@@ -32,6 +58,18 @@ export function checkCampaign(config: Config, campaign: string, opts: { only?: D
         const file = realpathSync(resolve(base, media.path));
         const rel = relative(base, file);
         if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel) || !statSync(file).isFile()) throw new Error();
+        const size = statSync(file).size;
+        const limit = destination === "bluesky" ? media.kind === "image" ? 2_000_000 : media.kind === "video" ? 300_000_000 : 20_000
+          : destination === "mastodon" ? media.kind === "image" ? config.mastodon.imageSizeLimit ?? 16_777_216
+            : media.kind === "video" ? config.mastodon.videoSizeLimit ?? 103_809_024 : undefined
+          : undefined;
+        if (limit !== undefined && size > limit) add("error", `media ${media.path}: ${size} bytes exceeds limit ${limit}`);
+        if (destination === "gist") {
+          const bytes = readFileSync(file);
+          if (!/\.(?:svg|txt|md|markdown|json|ya?ml|csv|xml|html|css|js|ts|log)$/i.test(file)
+            || bytes.includes(0) || !Buffer.from(bytes.toString("utf8")).equals(bytes))
+            add("error", `media ${media.path}: Gist accepts SVG and UTF-8 text only`);
+        }
       } catch { add("error", `media ${media.path}: missing or not campaign-local`); }
     }
     if (draft.studio && reviewHash({ title: draft.title, body: draft.body, media: draft.media ?? [] }) !== draft.studio.reviewHash)

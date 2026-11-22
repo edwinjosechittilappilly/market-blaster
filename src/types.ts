@@ -43,7 +43,7 @@ export interface Config {
   campaignsDir: string;
   /** `timeoutSeconds`: how long `mblast draft` lets the agent run before killing it (default 900). */
   agent: { command: string[]; timeoutSeconds: number };
-  devto: { tags?: string[]; publish?: boolean };
+  devto: { tags?: string[]; publish?: boolean; coverUrl?: string };
   hashnode: { publicationId?: string };
   githubDiscussion: { repo?: string; category?: string };
   nostr: { relays: string[] };
@@ -52,7 +52,7 @@ export interface Config {
   gist: { public?: boolean };
   bluesky: { host?: string; langs?: string[] };
   /** `maxChars`: the instance's status limit; the adapter reads it from the instance at preflight. */
-  mastodon: { host?: string; maxChars?: number };
+  mastodon: { host?: string; maxChars?: number; maxMediaAttachments?: number; imageSizeLimit?: number; videoSizeLimit?: number };
   linkedin: { api?: boolean };
   x: { api?: boolean };
   reddit: { subreddit?: string };
@@ -71,7 +71,7 @@ export interface Draft {
   /** Set when the agent or author decided this destination should not get a post; the value is the reason. */
   skip?: string;
   /** Path of the draft file. */
-  media?: { path: string; alt: string; kind: string }[];
+  media?: { path: string; alt: string; kind: string; cover?: boolean; lang?: string; captions?: string }[];
   studio?: { reviewHash: string; verdict: string };
   path: string;
 }
@@ -83,6 +83,8 @@ export interface ResolvedPost {
   tags?: string[];
   canonical?: string;
   body: string;
+  /** Attachments have absolute, campaign-local paths after resolution. */
+  media?: Draft["media"];
   /** Hash of the draft before link resolution; the approval key. */
   contentHash: string;
 }
@@ -115,7 +117,7 @@ export interface Ctx {
   /** Runs a command and returns stdout; used for `gh auth token`. Injected for tests. */
   run?: (cmd: string, args: string[]) => Promise<string>;
   crosspost?: (id: "x" | "linkedin" | "nostr", env: Env) => {
-    post(text: string, options: { signal: AbortSignal }): Promise<unknown>;
+    post(text: string, options: { signal: AbortSignal; images?: { data: Uint8Array; alt: string }[] }): Promise<unknown>;
     getUrlFromResponse?(response: never): string;
   };
 }
@@ -143,6 +145,8 @@ export interface Destination {
   apiEnabled?(config: Config): boolean;
   /** One authenticated read; throws on bad credentials. */
   verify?(ctx: Ctx): Promise<void>;
+  /** Read-only destination-specific validation, before any upload or post. */
+  preflight?(post: ResolvedPost, ctx: Ctx): Promise<void>;
   create?(post: ResolvedPost, ctx: Ctx, opts: { stage: boolean }): Promise<Published>;
   update?(id: string, post: ResolvedPost, ctx: Ctx, opts: { stage: boolean }): Promise<Published>;
   handoff?(post: ResolvedPost, ctx: Ctx): HandoffInfo;
@@ -150,6 +154,13 @@ export interface Destination {
   payload(post: ResolvedPost, ctx: Ctx, opts?: { stage: boolean }): unknown;
   /** Expected charge in USD for one create, when the platform bills per call. */
   cost?(post: ResolvedPost): number;
+}
+
+/** An upload cannot have created the final post, even if its outcome is unknown. */
+export class MediaUploadError extends Error {
+  constructor(cause: unknown) {
+    super(`media upload failed: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+  }
 }
 
 /** Thrown by adapters for a non-2xx response. */

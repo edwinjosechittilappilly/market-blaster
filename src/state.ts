@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync, linkSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { UserError } from "./types.ts";
 import type { CampaignState, Config, DestinationId, DestinationState, Draft } from "./types.ts";
 import { META } from "./destinations/meta.ts";
@@ -113,10 +113,20 @@ export function contentHash(draft: Pick<Draft, "destination" | "title" | "canoni
 export function approvalHash(draft: Draft, config: Config): string {
   const key = draft.destination === "github-discussion" ? "githubDiscussion" : draft.destination;
   const settings = key in config ? config[key as keyof Config] : undefined;
+  const media = draft.media?.map((item) => ({
+    path: item.path,
+    alt: item.alt,
+    kind: item.kind,
+    cover: item.cover,
+    lang: item.lang,
+    captions: item.captions,
+    captionsHash: item.captions ? createHash("sha256").update(readFileSync(resolve(dirname(draft.path), "..", item.captions))).digest("hex") : undefined,
+    hash: createHash("sha256").update(readFileSync(resolve(dirname(draft.path), "..", item.path))).digest("hex"),
+  }));
   return createHash("sha256")
     .update(JSON.stringify([
       draft.destination, draft.title ?? "", draft.canonical ?? "", draft.tags ?? [], draft.body, draft.skip ?? "",
-      config.canonicalHome ?? "", settings ?? null,
+      config.canonicalHome ?? "", settings ?? null, ...(media?.length ? [media] : []),
     ]))
     .digest("hex");
 }

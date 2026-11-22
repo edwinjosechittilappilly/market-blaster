@@ -1,3 +1,4 @@
+import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { checkCampaign } from "./check.ts";
 import { ALL_ENV_VARS, META, publishOrder } from "./destinations/meta.ts";
@@ -9,7 +10,7 @@ import { measureBody } from "./limits.ts";
 import { isDestinationId, linksIn, resolveLinks } from "./links.ts";
 import { approvalHash, loadState, needsApproval, updateState, withStateLock } from "./state.ts";
 import {
-  HttpError, UserError, type CampaignState, type Config, type Ctx, type Destination,
+  HttpError, MediaUploadError, UserError, type CampaignState, type Config, type Ctx, type Destination,
   type DestinationId, type Draft, type Env, type ResolvedPost,
 } from "./types.ts";
 
@@ -42,6 +43,12 @@ export function resolved(draft: Draft, config: Config, state: CampaignState, pen
     title: draft.title ? resolveLinks(draft.title, urls) : undefined,
     tags: draft.tags,
     body: resolveLinks(draft.body, urls),
+    media: draft.media?.flatMap((media) => {
+      const base = dirname(dirname(draft.path));
+      const item = { ...media, path: resolve(base, media.path), captions: media.captions ? resolve(base, media.captions) : undefined };
+      return draft.destination === "bluesky" && media.captions
+        ? [item, { path: resolve(base, media.captions), alt: media.alt, kind: "vtt", lang: media.lang }] : [item];
+    }),
     canonical: canonical ? resolveLinks(canonical, urls) : undefined,
     contentHash: approvalHash(draft, config),
   };
@@ -76,6 +83,9 @@ function handoffBlock(id: DestinationId, post: ResolvedPost, info: { url?: strin
     : previewText(post.body);
   const title = post.title ? `\n  title: ${post.title}` : "";
   return `${id}  handoff  (compose link, prefills ${prefills})${title}\n  text:  ${text}` +
+    `${post.media?.length ? `\n  attach:\n${post.media.flatMap((media) => [
+      `    ${media.path}`, ...(media.captions ? [`    ${media.captions}`] : []),
+    ]).join("\n")}` : ""}` +
     `${url ? `\n  open:  ${url}` : ""}`;
 }
 
@@ -121,6 +131,9 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
     ? (state[home]?.title ?? checked.drafts.get(home)?.title) : config.hn?.title;
   const hnDraft: Draft = { destination: "hn", title: homeTitle, evidence: [], body: "", path: "" };
   const draftFor = (id: DestinationId) => id === "hn" ? hnDraft : checked.drafts.get(id)!;
+  const destinationMode = (id: DestinationId) => id === "linkedin" && draftFor(id)?.media?.some(
+    (media) => media.kind === "pdf" || /\.pdf$/i.test(media.path),
+  ) ? { mode: "handoff" as const } : modeOf(id, config, env);
   const eligible: DestinationId[] = [];
   let failed = false;
   for (const id of order) {
@@ -138,7 +151,7 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
     if (entry?.status === "published" && (id === "hn" || entry.contentHash === approvalHash(draft, config))) {
       io.out(`${id}: published (skipped)`); continue;
     }
-    const mode = modeOf(id, config, env);
+    const mode = destinationMode(id);
     if (entry?.status === "handoff" && mode.mode === "api" && !opts.force) {
       io.out(`${id}: refused: prior handoff; mark it or use --force`); failed = true; continue;
     }
@@ -154,7 +167,7 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
     for (const id of eligible) {
       const post = resolved(draftFor(id), config, state, true);
       const adapter = adapters[id];
-      const mode = modeOf(id, config, env).mode;
+      const mode = destinationMode(id).mode;
       const cost = mode === "api" ? adapter.cost?.(post) : undefined;
       try {
         const payload = mode === "handoff"
@@ -172,10 +185,11 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
   }
   let preflightFailed = false;
   for (const id of eligible) {
-    if (modeOf(id, config, env).mode === "api") {
+    if (destinationMode(id).mode === "api") {
       try {
         if (adapters[id].verify) await adapters[id].verify!(ctx);
         else io.out(`${id}: preflight: verify unavailable (no read check available)`);
+        await adapters[id].preflight?.(resolved(draftFor(id), config, state, true), ctx);
       } catch (err) {
         io.out(`${id}: preflight failed: ${redact(String((err as Error).message ?? err), env, ALL_ENV_VARS)}`);
         preflightFailed = true;
@@ -217,7 +231,7 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
       io.out(`${id}: blocked: ${error}`); failed = true; continue;
     }
     const post = resolved(draft, config, state, false);
-    if (modeOf(id, config, env).mode === "handoff") {
+    if (destinationMode(id).mode === "handoff") {
       try {
         if (!adapter.handoff) throw new Error("adapter has no handoff");
         const info = adapter.handoff(post, ctx);
@@ -268,7 +282,7 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
           }
           break;
         } catch (err) {
-          if (attempt >= 2 || !(err instanceof HttpError && err.status === 429 || connectionRefused(err))) throw err;
+          if (err instanceof MediaUploadError || attempt >= 2 || !(err instanceof HttpError && err.status === 429 || connectionRefused(err))) throw err;
           await (opts.sleep ?? delay)(retryDelay(err, attempt));
         }
       }
@@ -279,7 +293,7 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
       });
       io.out(`${id}: ${status} ${result.url}`);
     } catch (err) {
-      const status = uncertain(err) ? "unknown" : "failed";
+      const status = !(err instanceof MediaUploadError) && uncertain(err) ? "unknown" : "failed";
       const error = redact(String((err as Error).message ?? err), env, ALL_ENV_VARS);
       if (updating && (entry?.status === "published" || entry?.status === "staged")) {
         updateState(campaign, state, id, { error, lastAttempt: { status, error } });

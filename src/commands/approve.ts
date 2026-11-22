@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { checkCampaign } from "../check.ts";
 import { campaignDir, loadConfig } from "../config.ts";
@@ -34,8 +35,32 @@ export const run: Command = async (args, io) => {
         `${id}${draft.title ? `: ${draft.title}` : ""}\ntags: ${(draft.tags ?? []).join(", ")}\n`
           + `canonical: ${canonical}\n${resolveLinks(draft.body, urls)}`,
       );
-      if (/^y(?:es)?$/i.test((await io.prompt(`approve ${id}? [y/N]`)).trim())) {
-        updateState(campaign, state, id, { approvedHash: approvalHash(draft, config) });
+      for (const media of draft.media ?? []) {
+        io.out(`media: ${media.path}\nalt: ${media.alt}`);
+        if (media.captions) io.out(`captions: ${media.captions}`);
+      }
+      const hash = approvalHash(draft, config);
+      for (;;) {
+        const answer = (await io.prompt(`approve ${id}? ${draft.media?.length ? "[y/N/p preview]" : "[y/N]"}`)).trim();
+        if (draft.media?.length && /^p$/i.test(answer)) {
+          for (const media of draft.media) {
+            try {
+              const path = resolve(campaign, media.path);
+              await io.run(process.platform === "darwin" ? "open" : "xdg-open", [path]);
+            } catch (error) {
+              io.err(`preview ${media.path}: ${(error as Error).message}`);
+            }
+          }
+          continue;
+        }
+        if (/^y(?:es)?$/i.test(answer)) {
+          if (approvalHash(draft, config) !== hash) {
+            io.err(`${id}: media changed during review; approve again`);
+            return 1;
+          }
+          updateState(campaign, state, id, { approvedHash: hash });
+        }
+        break;
       }
     }
     return 0;

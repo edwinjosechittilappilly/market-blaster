@@ -24,7 +24,10 @@ export const run: Command = async (args, io) => {
   const prepared = manifest.posts.map((post) => ({ post, media: post.media.map((item) => {
     const source = packageFile(root, item.path);
     const dir = createHash("sha256").update(item.path).digest("hex").slice(0, 16);
-    return { source, path: `media/${dir}/${basename(item.path)}`, alt: item.alt, kind: item.kind };
+    const captionSource = item.captions ? packageFile(root, item.captions) : undefined;
+    const captions = item.captions ? `media/${createHash("sha256").update(item.captions).digest("hex").slice(0, 16)}/${basename(item.captions)}` : undefined;
+    return { source, path: `media/${dir}/${basename(item.path)}`, alt: item.alt, kind: item.kind,
+      cover: item.cover, lang: item.lang, captions, captionSource };
   }) }));
   return withStateLock(campaign, async () => {
     const state = loadState(campaign);
@@ -41,9 +44,14 @@ export const run: Command = async (args, io) => {
         const target = join(campaign, item.path);
         mkdirSync(dirname(target), { recursive: true });
         copyFileSync(item.source, target);
+        if (item.captions && item.captionSource) {
+          const captionTarget = join(campaign, item.captions);
+          mkdirSync(dirname(captionTarget), { recursive: true });
+          copyFileSync(item.captionSource, captionTarget);
+        }
       }
       const front = { destination: post.destination, ...(post.title === undefined ? {} : { title: post.title }),
-        evidence: post.evidence, media: media.map(({ path, alt, kind }) => ({ path, alt, kind })),
+        evidence: post.evidence, media: media.map(({ source, captionSource, ...item }) => item),
         ...(post.disclosure === undefined ? {} : { disclosure: post.disclosure }),
         studio: { reviewHash: post.review.reviewHash, verdict: post.review.verdict } };
       const path = draftPath(campaign, post.destination);

@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
+import { extname } from "node:path";
 import { TwitterStrategy, LinkedInStrategy, NostrStrategy } from "@humanwhocodes/crosspost";
 import { measureBody, URL_RE } from "../limits.ts";
-import { HttpError } from "../types.ts";
-import type { Ctx, Destination } from "../types.ts";
+import { HttpError, UserError } from "../types.ts";
+import type { Ctx, Destination, ResolvedPost } from "../types.ts";
 import { META } from "./meta.ts";
 import { xIntent, linkedinShare } from "./handoffs.ts";
 import { requestJson, redactAdapter } from "./http.ts";
@@ -18,12 +20,12 @@ function strategy(id: "x" | "linkedin" | "nostr", ctx: Ctx): Strategy {
       : new LinkedInStrategy({ accessToken: ctx.env.LINKEDIN_ACCESS_TOKEN! })) as unknown as Strategy;
 }
 
-async function create(id: "x" | "linkedin" | "nostr", text: string, ctx: Ctx) {
+async function create(id: "x" | "linkedin" | "nostr", text: string, ctx: Ctx, images?: { data: Uint8Array; alt: string }[]) {
   const client = strategy(id, ctx);
   const { promise: timeout, reject } = Promise.withResolvers<never>();
   const timer = setTimeout(() => reject(new DOMException("Crosspost timed out", "TimeoutError")), ctx.timeoutMs);
   try {
-    const response = await Promise.race([client.post(text, { signal: AbortSignal.timeout(ctx.timeoutMs) }), timeout]);
+    const response = await Promise.race([client.post(text, { signal: AbortSignal.timeout(ctx.timeoutMs), ...(images?.length ? { images } : {}) }), timeout]);
     try {
       const result = response as { data?: { id?: string }; id?: string };
       const postId = result.data?.id ?? result.id;
@@ -61,12 +63,24 @@ export const x: Destination = {
   cost: (post) => /https?:\/\//.test(post.body) ? 0.20 : 0.015,
 };
 
+function linkedinImages(post: ResolvedPost) {
+  const media = post.media ?? [];
+  if (media.length > 20) throw new UserError("linkedin supports at most twenty images");
+  return media.map((item) => {
+    if (item.kind !== "image" || extname(item.path).toLowerCase() === ".pdf") {
+      throw new UserError(`linkedin attachment ${item.path} requires manual handoff`);
+    }
+    return { data: readFileSync(item.path), alt: item.alt };
+  });
+}
+
 export const linkedin: Destination = {
   id: "linkedin", kind: "social", env: META.linkedin.env,
   limit: (text, ctx) => measureBody("linkedin", text, ctx.config),
   apiEnabled: (config) => config.linkedin.api === true,
   payload: (post) => ({ text: post.body }),
-  create: (post, ctx) => create("linkedin", post.body, ctx),
+  async preflight(post) { linkedinImages(post); },
+  async create(post, ctx) { return create("linkedin", post.body, ctx, linkedinImages(post)); },
   handoff: (post) => {
     const url = post.body.match(URL_RE)?.[0];
     return url

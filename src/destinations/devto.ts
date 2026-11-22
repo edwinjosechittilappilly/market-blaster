@@ -7,9 +7,16 @@ function payload(post: ResolvedPost, ctx: Ctx, stage = false) {
   if (tags.length > 4 || tags.some((tag) => !/^[a-z0-9]+$/.test(tag))) {
     throw new UserError("devto tags must be lowercase alphanumeric and at most four");
   }
+  if (ctx.config.devto.coverUrl && !/^https?:\/\//i.test(ctx.config.devto.coverUrl)) {
+    throw new UserError("devto coverUrl must be a hosted HTTP(S) URL");
+  }
+  for (const match of post.body.matchAll(/!\[[^\]]*\]\(\s*<?([^)\s>]+)>?/g)) {
+    if (!/^https?:\/\//i.test(match[1])) throw new UserError("devto inline images must use hosted HTTP(S) URLs");
+  }
   return { article: {
     title: post.title, body_markdown: post.body, published: !stage && ctx.config.devto.publish === true,
-    tags, canonical_url: post.canonical,
+    tags, canonical_url: post.canonical, ...(post.media?.some((media) => media.cover) && ctx.config.devto.coverUrl
+      ? { main_image: ctx.config.devto.coverUrl } : {}),
   } };
 }
 async function request(ctx: Ctx, path: string, method: string, body?: unknown) {
@@ -23,6 +30,7 @@ async function request(ctx: Ctx, path: string, method: string, body?: unknown) {
 export const devto: Destination = {
   id: "devto", kind: "article", env: ["DEV_API_KEY"], limit: () => null,
   payload: (post, ctx, opts) => payload(post, ctx, opts?.stage),
+  async preflight(post, ctx) { payload(post, ctx); },
   async verify(ctx) { await request(ctx, "/users/me", "GET"); },
   async create(post, ctx, opts) {
     const body = payload(post, ctx, opts.stage);

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { checkCampaign } from "../src/check.ts";
@@ -125,4 +125,21 @@ test("DEV tag rules are checked before publishing", () => {
   assert.ok(checkCampaign(loadConfig(root), campaign).findings.some((f) => f.level === "error" && f.message.includes("DEV tags")));
   const override = project({ "market-blaster.yml": "brand: { name: Demo }\ndestinations: [devto]\ndevto:\n  tags: [good]\n", "campaigns/a/drafts/devto.md": devto("Feature", 'title: Title\ntags: [one, two, three, four, five]\n') });
   assert.ok(checkCampaign(loadConfig(override), join(override, "campaigns/a")).findings.some((f) => f.level === "error" && f.message.includes("DEV tags")));
+});
+
+test("media validation enforces Bluesky image count and byte boundaries", () => {
+  const media = Array.from({ length: 5 }, (_, i) => `  - { path: image${i}.png, kind: image, alt: Diagram }`).join("\n");
+  const root = project({
+    "campaigns/a/drafts/devto.md": devto("Article"),
+    "campaigns/a/drafts/bluesky.md": `---\ndestination: bluesky\nevidence: [E1]\nmedia:\n${media}\n---\nPost\n`,
+    ...Object.fromEntries(Array.from({ length: 5 }, (_, i) => [`campaigns/a/image${i}.png`, "x"])),
+  });
+  const image = join(root, "campaigns/a/image0.png");
+  writeFileSync(image, Buffer.alloc(2_000_000));
+  let findings = checkCampaign(loadConfig(root), join(root, "campaigns/a")).findings;
+  assert(findings.some((finding) => finding.message.includes("at most 4 images")));
+  assert(!findings.some((finding) => finding.message.includes("exceeds limit 2000000")));
+  writeFileSync(image, Buffer.alloc(2_000_001));
+  findings = checkCampaign(loadConfig(root), join(root, "campaigns/a")).findings;
+  assert(findings.some((finding) => finding.message.includes("exceeds limit 2000000")));
 });

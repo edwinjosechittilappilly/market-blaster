@@ -44,6 +44,48 @@ test("approval gates content and dry run respects staging", async () => {
   assert.match(io.text(), /not approved/);
 });
 
+test("media approval lists attachments and previews only on request", async () => {
+  const s = setup(["x"], "", { x: "---\ndestination: x\nevidence: [E1]\nmedia:\n  - path: image.png\n    alt: A mountain\n    kind: image\n---\nGrounded evidence\n" });
+  const image = join(s.campaign, "image.png");
+  writeFileSync(image, "image bytes");
+  const calls: { cmd: string; args: string[] }[] = [];
+  const run = async (cmd: string, args: string[]) => { calls.push({ cmd, args }); return ""; };
+  const plain = fakeIO({ cwd: s.root, isTTY: true, answers: ["n"], run });
+  assert.equal(await approve(["test"], plain), 0);
+  assert.match(plain.text(), /image\.png/);
+  assert.match(plain.text(), /A mountain/);
+  assert.equal(calls.length, 0);
+  const preview = fakeIO({ cwd: s.root, isTTY: true, answers: ["p", "y"], run });
+  assert.equal(await approve(["test"], preview), 0);
+  assert.deepEqual(calls, [{
+    cmd: process.platform === "darwin" ? "open" : "xdg-open",
+    args: [image],
+  }]);
+  assert.ok(loadState(s.campaign).x?.approvedHash);
+});
+
+test("changing attachment bytes invalidates approval before publishing", async () => {
+  const s = setup(["x"], "", { x: "---\ndestination: x\nevidence: [E1]\nmedia:\n  - path: image.png\n    alt: A mountain\n    kind: image\n---\nGrounded evidence\n" });
+  const image = join(s.campaign, "image.png");
+  writeFileSync(image, "image bytes");
+  await approveAll(s.root);
+  writeFileSync(image, "changed image bytes");
+  const io = fakeIO({ cwd: s.root });
+  assert.equal(await publishCampaign({ ...s, io, env, adapters: ADAPTERS, yes: true }), 1);
+  assert.match(io.text(), /not approved or has changed/);
+  await approveAll(s.root);
+  assert.equal(await publishCampaign({ ...s, io, env, adapters: ADAPTERS, yes: true }), 0);
+});
+
+test("approval refuses attachments changed during review", async () => {
+  const s = setup(["x"], "", { x: "---\ndestination: x\nevidence: [E1]\nmedia:\n  - path: image.png\n    alt: A mountain\n    kind: image\n---\nGrounded evidence\n" });
+  const image = join(s.campaign, "image.png");
+  writeFileSync(image, "image bytes");
+  const io = fakeIO({ cwd: s.root, isTTY: true, prompt: async () => { writeFileSync(image, "changed"); return "y"; } });
+  assert.equal(await approve(["test"], io), 1);
+  assert.equal(loadState(s.campaign).x?.approvedHash, undefined);
+});
+
 test("DEV default stages; next run updates in place", async () => {
   const s = setup(["devto"]); await approveAll(s.root);
   const net = mockFetch(okDev); const io = fakeIO({ cwd: s.root, fetch: net.fetch });
@@ -252,4 +294,37 @@ test("dry run displays blocks and JSON retains full payload", async () => {
   const records = json.stdout.map(line => JSON.parse(line));
   assert.equal(records[0].payload.article.body_markdown, "Grounded evidence");
   assert.match(records[1].payload.url, /x\.com\/intent\/post/);
+});
+
+test("LinkedIn PDF uses a manual handoff with attachment paths even in API mode", async () => {
+  const s = setup(["linkedin"], "linkedin:\n  api: true\n", {
+    linkedin: "---\ndestination: linkedin\nevidence: [E1]\nmedia:\n  - path: carousel.pdf\n    alt: Slides\n    kind: document\n---\nGrounded evidence\n",
+  });
+  writeFileSync(join(s.campaign, "carousel.pdf"), "%PDF-1.4");
+  await approveAll(s.root);
+  const io = fakeIO({ cwd: s.root });
+  let posts = 0;
+  const crosspost = () => ({ async post() { posts++; return { id: "1" }; } });
+  const opts = { ...s, io, env, adapters: ADAPTERS, crosspost };
+  assert.equal(await publishCampaign(opts), 0);
+  assert.match(io.text(), /handoff/);
+  assert.match(io.text(), /carousel\.pdf/);
+  const live = fakeIO({ cwd: s.root });
+  assert.equal(await publishCampaign({ ...opts, io: live, yes: true }), 0);
+  assert.match(live.text(), /carousel\.pdf/);
+  assert.equal(posts, 0);
+  assert.equal(loadState(s.campaign).linkedin?.status, "handoff");
+});
+
+test("manual handoffs list every attachment", async () => {
+  const s = setup(["x"], "", {
+    x: "---\ndestination: x\nevidence: [E1]\nmedia:\n  - path: first.png\n    alt: First\n    kind: image\n  - path: second.png\n    alt: Second\n    kind: image\n---\nGrounded evidence\n",
+  });
+  writeFileSync(join(s.campaign, "first.png"), "first");
+  writeFileSync(join(s.campaign, "second.png"), "second");
+  await approveAll(s.root);
+  const io = fakeIO({ cwd: s.root });
+  assert.equal(await publishCampaign({ ...s, io, env, adapters: ADAPTERS, yes: true }), 0);
+  assert.match(io.text(), /first\.png/);
+  assert.match(io.text(), /second\.png/);
 });
