@@ -1,11 +1,12 @@
-import { readFile, stat } from "node:fs/promises";
+import { access, readFile, stat } from "node:fs/promises";
+import { constants } from "node:fs";
 import { basename, extname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { measureBody } from "../limits.ts";
 import { HttpError, MediaUploadError } from "../types.ts";
 import type { Ctx, Destination } from "../types.ts";
 import { META } from "./meta.ts";
-import { requestJson } from "./http.ts";
+import { requestJson, uploadTimeout } from "./http.ts";
 
 interface MastodonResponse {
   id?: string; url?: string | null; error?: string;
@@ -47,15 +48,28 @@ async function instanceInfo(ctx: Ctx): Promise<MastodonResponse> {
 
 async function uploadMedia(media: NonNullable<Parameters<NonNullable<Destination["create"]>>[0]["media"]>[number], ctx: Ctx): Promise<string> {
   const form = new FormData();
-  form.set("file", new Blob([await readFile(media.path)], { type: mimeType(media.path) }), basename(media.path));
+  const bytes = media.data ?? await readFile(media.path);
+  form.set("file", new Blob([bytes], { type: mimeType(media.path) }), basename(media.path));
   form.set("description", media.alt);
-  let result = await request(ctx, "/api/v2/media", { method: "POST", body: form });
+  let result = await request(ctx, "/api/v2/media", {
+    method: "POST", body: form, signal: AbortSignal.timeout(uploadTimeout(bytes.length)),
+  });
   if (!result.id) throw new Error("mastodon: media upload returned no id");
   const id = result.id;
-  for (let attempt = 0; !result.url && attempt < 10; attempt++) {
+  const now = ctx.now ?? Date.now;
+  const deadline = now() + (ctx.config.mastodon.processingTimeoutMs ?? 600_000);
+  let interval = 1000;
+  while (!result.url) {
     if (result.error) throw new Error(`mastodon: media processing failed: ${result.error}`);
-    await delay(1000);
-    result = await request(ctx, `/api/v1/media/${encodeURIComponent(id)}`);
+    const remaining = deadline - now();
+    if (remaining <= 0) break;
+    await (ctx.sleep ?? delay)(Math.min(interval, remaining));
+    interval = Math.min(interval * 2, 10_000);
+    const requestTime = deadline - now();
+    if (requestTime <= 0) break;
+    result = await request(ctx, `/api/v1/media/${encodeURIComponent(id)}`, {
+      signal: AbortSignal.timeout(Math.min(ctx.timeoutMs, requestTime)),
+    });
   }
   if (result.error) throw new Error(`mastodon: media processing failed: ${result.error}`);
   if (!result.url) throw new Error("mastodon: media processing did not finish");
@@ -76,15 +90,29 @@ export const mastodon: Destination = {
     if (!post.media?.length) return;
     const instance = await instanceInfo(ctx);
     const limits = instance.configuration?.media_attachments;
-    const maxAttachments = instance.configuration?.statuses?.max_media_attachments;
-    if (typeof maxAttachments === "number" && post.media.length > maxAttachments)
+    const maxAttachments = instance.configuration?.statuses?.max_media_attachments
+      ?? ctx.config.mastodon.maxMediaAttachments ?? 4;
+    if (post.media.length > maxAttachments)
       throw new Error(`mastodon: ${post.media.length} attachments exceeds instance limit ${maxAttachments}`);
+    if (post.media.length > 1 && post.media.some((media) => media.kind === "video"))
+      throw new Error("mastodon: a video cannot be combined with other attachments");
     for (const media of post.media) {
       const mime = mimeType(media.path);
+      if (!["image", "gif", "video"].includes(media.kind)
+        || !(media.kind === "video" ? mime.startsWith("video/") : mime.startsWith("image/")))
+        throw new Error(`mastodon: ${media.path}: unsupported media type ${mime}`);
       if (limits?.supported_mime_types && !limits.supported_mime_types.includes(mime))
         throw new Error(`mastodon: ${media.path}: unsupported media type ${mime}`);
-      const size = (await stat(media.path)).size;
-      const max = mime.startsWith("image/") ? limits?.image_size_limit : limits?.video_size_limit;
+      let size = media.data?.length;
+      if (size === undefined) {
+        await access(media.path, constants.R_OK);
+        const info = await stat(media.path);
+        if (!info.isFile()) throw new Error(`mastodon: ${media.path}: not a file`);
+        size = info.size;
+      }
+      const max = mime.startsWith("image/")
+        ? limits?.image_size_limit ?? ctx.config.mastodon.imageSizeLimit
+        : limits?.video_size_limit ?? ctx.config.mastodon.videoSizeLimit;
       if (typeof max === "number" && size > max)
         throw new Error(`mastodon: ${media.path}: ${size} bytes exceeds instance limit ${max}`);
       if (typeof limits?.description_limit === "number" && [...media.alt].length > limits.description_limit)

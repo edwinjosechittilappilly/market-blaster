@@ -8,8 +8,10 @@ import { approvalHash, loadState, updateState, withStateLock } from "../state.ts
 import { UserError, type DestinationId } from "../types.ts";
 
 export const run: Command = async (args, io) => {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { only: { type: "string" } } });
-  if (positionals.length !== 1) throw new UserError("usage: approve <slug> [--only a,b]");
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
+    only: { type: "string" }, "no-preview": { type: "boolean" },
+  } });
+  if (positionals.length !== 1) throw new UserError("usage: approve <slug> [--only a,b] [--no-preview]");
   if (!io.isTTY) { io.err("approve requires an interactive terminal"); return 1; }
   const config = loadConfig(io.cwd);
   const campaign = campaignDir(config, positionals[0]);
@@ -40,27 +42,21 @@ export const run: Command = async (args, io) => {
         if (media.captions) io.out(`captions: ${media.captions}`);
       }
       const hash = approvalHash(draft, config);
-      for (;;) {
-        const answer = (await io.prompt(`approve ${id}? ${draft.media?.length ? "[y/N/p preview]" : "[y/N]"}`)).trim();
-        if (draft.media?.length && /^p$/i.test(answer)) {
-          for (const media of draft.media) {
-            try {
-              const path = resolve(campaign, media.path);
-              await io.run(process.platform === "darwin" ? "open" : "xdg-open", [path]);
-            } catch (error) {
-              io.err(`preview ${media.path}: ${(error as Error).message}`);
-            }
+      if (!values["no-preview"]) {
+        for (const media of draft.media ?? []) {
+          for (const path of [media.path, ...(media.captions ? [media.captions] : [])]) {
+            try { await io.run(process.platform === "darwin" ? "open" : "xdg-open", [resolve(campaign, path)]); }
+            catch (error) { io.err(`preview ${path}: ${(error as Error).message}`); }
           }
-          continue;
         }
-        if (/^y(?:es)?$/i.test(answer)) {
-          if (approvalHash(draft, config) !== hash) {
-            io.err(`${id}: media changed during review; approve again`);
-            return 1;
-          }
-          updateState(campaign, state, id, { approvedHash: hash });
+      }
+      const answer = (await io.prompt(`approve ${id}? [y/N]`)).trim();
+      if (/^y(?:es)?$/i.test(answer)) {
+        if (approvalHash(draft, config) !== hash) {
+          io.err(`${id}: media changed during review; approve again`);
+          return 1;
         }
-        break;
+        updateState(campaign, state, id, { approvedHash: hash });
       }
     }
     return 0;

@@ -4,17 +4,19 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
 import { imageSize } from "image-size";
-import { MediaUploadError, UserError } from "../types.ts";
+import { HttpError, MediaUploadError, UserError } from "../types.ts";
 import { measureBody, URL_RE } from "../limits.ts";
 import type { Ctx, Destination, ResolvedPost } from "../types.ts";
 import { META } from "./meta.ts";
-import { requestJson } from "./http.ts";
+import { redactAdapter, requestJson, uploadTimeout } from "./http.ts";
 
 const execFileAsync = promisify(execFile);
 type BlobRef = { $type: string; ref: unknown; mimeType: string; size: number };
 type Auth = { did: string; accessJwt: string; didDoc?: { service?: { id: string; serviceEndpoint: string }[] } };
 type Media = NonNullable<ResolvedPost["media"]>[number];
 type Job = { jobId: string; state: string; blob?: BlobRef; error?: string; message?: string };
+type Dimensions = { width: number; height: number };
+const dimensionsCache = new WeakMap<Ctx, Map<string, { signature: string; data?: Buffer; dimensions: Dimensions }>>();
 
 function host(ctx: Ctx) {
   return `https://${ctx.env.BLUESKY_HOST || ctx.config.bluesky.host || "bsky.social"}`;
@@ -63,7 +65,7 @@ function mime(path: string): string {
   return types[extname(path).toLowerCase()] ?? "";
 }
 
-async function preflight(post: ResolvedPost) {
+async function preflight(post: ResolvedPost, ctx: Ctx) {
   const media = post.media ?? [];
   const images = media.filter((item) => item.kind === "image");
   const videos = media.filter((item) => item.kind === "video");
@@ -72,18 +74,41 @@ async function preflight(post: ResolvedPost) {
     throw new UserError("bluesky: use up to four images or one video with captions");
   }
   for (const item of media) {
-    const size = (await stat(item.path)).size;
+    const info = await stat(item.path);
+    const size = item.data?.length ?? info.size;
     if (item.kind === "image" && size > 2_000_000) throw new UserError(`bluesky: image exceeds 2 MB: ${item.path}`);
+    if (item.kind === "video" && size > 300_000_000) throw new UserError(`bluesky: video exceeds 300 MB: ${item.path}`);
+    if ((item.kind === "vtt" || item.kind === "caption") && size > 20_000) throw new UserError(`bluesky: caption exceeds 20 KB: ${item.path}`);
+    if (/\.gif$/i.test(item.path)) throw new UserError("bluesky: GIF attachments are unsupported; export MP4 instead");
     if (!mime(item.path) || (item.kind === "image" && !mime(item.path).startsWith("image/")) || (item.kind === "video" && mime(item.path) !== "video/mp4") || ((item.kind === "vtt" || item.kind === "caption") && mime(item.path) !== "text/vtt")) {
       throw new UserError(`bluesky: unsupported media type: ${item.path}`);
+    }
+    if (item.kind === "image" || item.kind === "video") {
+      const signature = `${item.kind}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
+      let cache = dimensionsCache.get(ctx);
+      if (!cache) dimensionsCache.set(ctx, cache = new Map());
+      const cached = cache.get(item.path);
+      if (cached?.signature !== signature || cached.data !== item.data) {
+        let dimensions: Partial<Dimensions> | undefined;
+        if (item.kind === "image") {
+          dimensions = imageSize(item.data ?? await readFile(item.path));
+        } else {
+          const run = ctx.run ?? (async (cmd: string, args: string[]) => (await execFileAsync(cmd, args)).stdout);
+          const probe = JSON.parse(await run("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", item.path])) as { streams?: Dimensions[] };
+          dimensions = probe.streams?.[0];
+        }
+        if (!dimensions?.width || !dimensions.height) throw new UserError(`bluesky: unable to determine media dimensions: ${item.path}`);
+        cache.set(item.path, { signature, data: item.data, dimensions: { width: dimensions.width, height: dimensions.height } });
+      }
     }
   }
 }
 
 async function uploadBlob(ctx: Ctx, auth: Auth, item: Media): Promise<BlobRef> {
-  const bytes = await readFile(item.path);
+  const bytes = item.data ?? await readFile(item.path);
   const result = await requestJson<{ blob: BlobRef }>(ctx, "bluesky", `${pds(auth, ctx)}/xrpc/com.atproto.repo.uploadBlob`, {
     method: "POST", headers: { authorization: `Bearer ${auth.accessJwt}`, "content-type": mime(item.path) }, body: bytes,
+    signal: AbortSignal.timeout(uploadTimeout(bytes.length)),
   });
   return result.blob;
 }
@@ -91,16 +116,37 @@ async function uploadBlob(ctx: Ctx, auth: Auth, item: Media): Promise<BlobRef> {
 async function videoBlob(ctx: Ctx, auth: Auth, item: Media): Promise<BlobRef> {
   const params = new URLSearchParams({ aud: `did:web:${new URL(pds(auth, ctx)).host.replaceAll(":", "%3A")}`, lxm: "com.atproto.repo.uploadBlob", exp: String(Math.floor(Date.now() / 1000) + 1800) });
   const service = await requestJson<{ token: string }>(ctx, "bluesky", `${pds(auth, ctx)}/xrpc/com.atproto.server.getServiceAuth?${params}`, { headers: { authorization: `Bearer ${auth.accessJwt}` } });
-  const bytes = await readFile(item.path);
+  const bytes = item.data ?? await readFile(item.path);
   const query = new URLSearchParams({ did: auth.did, name: basename(item.path) });
-  let job = await requestJson<Job>(ctx, "bluesky", `https://video.bsky.app/xrpc/app.bsky.video.uploadVideo?${query}`, {
+  const response = await ctx.fetch(`https://video.bsky.app/xrpc/app.bsky.video.uploadVideo?${query}`, {
     method: "POST", headers: { authorization: `Bearer ${service.token}`, "content-type": "video/mp4", "content-length": String(bytes.length) }, body: bytes,
+    redirect: "manual", signal: AbortSignal.timeout(uploadTimeout(bytes.length)),
   });
+  const text = await response.text();
+  let job: Job;
+  try {
+    job = JSON.parse(text) as Job;
+  } catch (cause) {
+    if (response.ok && response.type !== "opaqueredirect") throw new Error("bluesky: could not parse successful response", { cause });
+    job = {} as Job;
+  }
+  if (!response.ok || response.type === "opaqueredirect") {
+    if (job.error === "already_exists" && (job.blob || job.jobId)) {
+      job = { ...job, error: undefined };
+    } else {
+      const error = new HttpError(response.status, `bluesky ${response.status}: ${redactAdapter(text.slice(0, 200), ctx, "bluesky")}`);
+      const retryAfter = response.headers.get("retry-after");
+      if (retryAfter) Object.assign(error, { retryAfter });
+      throw error;
+    }
+  }
   const deadline = Date.now() + 10 * 60_000;
+  let firstPoll = true;
   while (!job.blob) {
     if (job.error || job.state === "JOB_STATE_FAILED") throw new Error(`bluesky video processing failed: ${job.message || job.error || job.state}`);
     if (!job.jobId || Date.now() >= deadline) throw new Error("bluesky video processing did not complete");
-    await delay(1000);
+    if (!firstPoll) await delay(1000);
+    firstPoll = false;
     const status = await requestJson<{ jobStatus: Job }>(ctx, "bluesky", `https://video.bsky.app/xrpc/app.bsky.video.getJobStatus?${new URLSearchParams({ jobId: job.jobId })}`);
     job = status.jobStatus;
   }
@@ -115,16 +161,13 @@ async function mediaEmbed(post: ResolvedPost, ctx: Ctx, auth: Auth): Promise<unk
     if (images.length) {
       const entries = [];
       for (const image of images) {
-        const dimensions = imageSize(await readFile(image.path));
+        const dimensions = dimensionsCache.get(ctx)!.get(image.path)!.dimensions;
         entries.push({ alt: image.alt, image: await uploadBlob(ctx, auth, image), ...(dimensions.width && dimensions.height ? { aspectRatio: { width: dimensions.width, height: dimensions.height } } : {}) });
       }
       return { $type: "app.bsky.embed.images", images: entries };
     }
     const video = media.find((item) => item.kind === "video")!;
-    const run = ctx.run ?? (async (cmd: string, args: string[]) => (await execFileAsync(cmd, args)).stdout);
-    const probe = JSON.parse(await run("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", video.path])) as { streams: { width: number; height: number }[] };
-    const dimensions = probe.streams[0];
-    if (!dimensions?.width || !dimensions.height) throw new Error("bluesky: unable to determine video dimensions");
+    const dimensions = dimensionsCache.get(ctx)!.get(video.path)!.dimensions;
     const blob = await videoBlob(ctx, auth, video);
     const captions = [];
     for (const caption of media.filter((item) => item.kind === "vtt" || item.kind === "caption")) {
@@ -143,7 +186,7 @@ export const bluesky: Destination = {
   preflight,
   async verify(ctx) { await session(ctx); },
   async create(post, ctx) {
-    await preflight(post);
+    await preflight(post, ctx);
     const auth = await session(ctx);
     const embed = await mediaEmbed(post, ctx, auth);
     const data = await request<{ uri: string }>(ctx, pds(auth, ctx), "com.atproto.repo.createRecord", {

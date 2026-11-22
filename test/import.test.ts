@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
+import { strToU8, zipSync } from "fflate";
 import { run } from "../src/commands/import.ts";
 import { checkCampaign } from "../src/check.ts";
 import { loadConfig } from "../src/config.ts";
@@ -89,4 +90,52 @@ test("imports cover and caption metadata and copies the VTT", async () => {
   assert.equal(media.cover, true);
   assert.equal(media.lang, "en-US");
   assert.equal(readFileSync(join(s.campaign, media.captions!), "utf8"), "WEBVTT\n");
+});
+
+test("rejects missing paths and non-zip files with user-facing errors", async () => {
+  const s = setup();
+  await assert.rejects(run(["missing"], s.io), /import path not found: missing/);
+  await assert.rejects(run([join(s.pkg, "brief.md")], s.io), /directory or .zip file/);
+});
+
+test("warns about each existing file before replacing a v1 import", async () => {
+  const s = setup();
+  await run([s.pkg], s.io);
+  assert.doesNotMatch(s.io.text(), /will replace existing files/);
+  await run([s.pkg], s.io);
+  const warning = s.io.stderr.join("\n");
+  for (const path of ["brief.md", "drafts/bluesky.md", "drafts/mastodon.md", "handoff/bluesky-thread.md"]) {
+    assert.ok(warning.includes(path), path);
+  }
+  assert.match(warning, /media\/[a-f0-9]+\/img\.png/);
+});
+
+test("warns about replaced files in v2 archives and preserves unrelated files", async () => {
+  const s = setup();
+  const manifest = { version: 2, kind: "blast-studio-campaign", slug: "demo", title: "Demo",
+    generatedAt: "2026-01-01T00:00:00Z", generator: { name: "Studio", version: "1" },
+    canonicalHome: null, sources: [], destinations: [], manual: [] };
+  const zip = join(s.root, "campaign.zip");
+  writeFileSync(zip, zipSync({ "campaign.json": strToU8(JSON.stringify(manifest)),
+    "brief.md": strToU8("brief"), "handoff/manual.md": strToU8("new handoff"),
+    "review/review.md": strToU8("new review") }));
+  await run([zip], s.io);
+  writeFileSync(join(s.campaign, "handoff/unrelated.md"), "keep");
+  await run([zip], s.io);
+  const warning = s.io.stderr.join("\n");
+  for (const path of ["brief.md", "drafts/bluesky.md", "drafts/mastodon.md", "handoff/manual.md", "review/review.md"]) {
+    assert.ok(warning.includes(path), path);
+  }
+  assert.doesNotMatch(warning, /unrelated\.md/);
+  assert.equal(readFileSync(join(s.campaign, "handoff/unrelated.md"), "utf8"), "keep");
+});
+
+test("rejects invalid shared media metadata in v1 manifests", async () => {
+  const s = setup();
+  Object.assign(s.manifest.posts[0].media[0], { lang: "not a language" });
+  s.save();
+  await assert.rejects(run([s.pkg], s.io), /invalid Studio manifest post/);
+  Object.assign(s.manifest.posts[0].media[0], { lang: "en", captions: "captions.vtt" });
+  s.save();
+  await assert.rejects(run([s.pkg], s.io), /invalid Studio manifest post/);
 });

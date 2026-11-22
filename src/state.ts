@@ -110,7 +110,13 @@ export function contentHash(draft: Pick<Draft, "destination" | "title" | "canoni
 }
 
 /** Includes all settings that can change the published payload. */
-export function approvalHash(draft: Draft, config: Config): string {
+export function approvalHash(draft: Draft, config: Config, mediaHashes?: ReadonlyMap<string, string>): string {
+  const hashFile = (path: string) => {
+    if (!mediaHashes) return createHash("sha256").update(readFileSync(path)).digest("hex");
+    const hash = mediaHashes.get(path);
+    if (hash === undefined) throw new Error(`missing media snapshot: ${path}`);
+    return hash;
+  };
   const key = draft.destination === "github-discussion" ? "githubDiscussion" : draft.destination;
   const settings = key in config ? config[key as keyof Config] : undefined;
   const media = draft.media?.map((item) => ({
@@ -120,8 +126,8 @@ export function approvalHash(draft: Draft, config: Config): string {
     cover: item.cover,
     lang: item.lang,
     captions: item.captions,
-    captionsHash: item.captions ? createHash("sha256").update(readFileSync(resolve(dirname(draft.path), "..", item.captions))).digest("hex") : undefined,
-    hash: createHash("sha256").update(readFileSync(resolve(dirname(draft.path), "..", item.path))).digest("hex"),
+    captionsHash: item.captions ? hashFile(resolve(dirname(draft.path), "..", item.captions)) : undefined,
+    hash: hashFile(resolve(dirname(draft.path), "..", item.path)),
   }));
   return createHash("sha256")
     .update(JSON.stringify([

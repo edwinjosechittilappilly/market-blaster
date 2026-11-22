@@ -1,12 +1,12 @@
 import { readFileSync } from "node:fs";
-import { extname } from "node:path";
+import { isPdf } from "../media.ts";
 import { TwitterStrategy, LinkedInStrategy, NostrStrategy } from "@humanwhocodes/crosspost";
 import { measureBody, URL_RE } from "../limits.ts";
 import { HttpError, UserError } from "../types.ts";
 import type { Ctx, Destination, ResolvedPost } from "../types.ts";
 import { META } from "./meta.ts";
 import { xIntent, linkedinShare } from "./handoffs.ts";
-import { requestJson, redactAdapter } from "./http.ts";
+import { requestJson, redactAdapter, uploadTimeout } from "./http.ts";
 
 type Strategy = NonNullable<Ctx["crosspost"]> extends (...args: never[]) => infer S ? S : never;
 function strategy(id: "x" | "linkedin" | "nostr", ctx: Ctx): Strategy {
@@ -22,10 +22,11 @@ function strategy(id: "x" | "linkedin" | "nostr", ctx: Ctx): Strategy {
 
 async function create(id: "x" | "linkedin" | "nostr", text: string, ctx: Ctx, images?: { data: Uint8Array; alt: string }[]) {
   const client = strategy(id, ctx);
+  const timeoutMs = images?.length ? uploadTimeout(images.reduce((total, image) => total + image.data.byteLength, 0)) : ctx.timeoutMs;
   const { promise: timeout, reject } = Promise.withResolvers<never>();
-  const timer = setTimeout(() => reject(new DOMException("Crosspost timed out", "TimeoutError")), ctx.timeoutMs);
+  const timer = setTimeout(() => reject(new DOMException("Crosspost timed out", "TimeoutError")), timeoutMs);
   try {
-    const response = await Promise.race([client.post(text, { signal: AbortSignal.timeout(ctx.timeoutMs), ...(images?.length ? { images } : {}) }), timeout]);
+    const response = await Promise.race([client.post(text, { signal: AbortSignal.timeout(timeoutMs), ...(images?.length ? { images } : {}) }), timeout]);
     try {
       const result = response as { data?: { id?: string }; id?: string };
       const postId = result.data?.id ?? result.id;
@@ -67,10 +68,10 @@ function linkedinImages(post: ResolvedPost) {
   const media = post.media ?? [];
   if (media.length > 20) throw new UserError("linkedin supports at most twenty images");
   return media.map((item) => {
-    if (item.kind !== "image" || extname(item.path).toLowerCase() === ".pdf") {
+    if (item.kind !== "image" || isPdf(item)) {
       throw new UserError(`linkedin attachment ${item.path} requires manual handoff`);
     }
-    return { data: readFileSync(item.path), alt: item.alt };
+    return { data: item.data ?? readFileSync(item.path), alt: item.alt };
   });
 }
 

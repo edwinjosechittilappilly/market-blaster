@@ -25,9 +25,9 @@ const COMMANDS: Record<string, { summary: string; run: Command }> = {
   new: { summary: "brief + draft + check in one go: new <slug> --range A..B [--pr N]", run: newCampaign },
   brief: { summary: "collect evidence: brief <slug> --range A..B [--pr N] [--version V] [--force]", run: brief },
   draft: { summary: "AI-draft every destination from the brief: draft <slug> [--force]", run: draft },
-  import: { summary: "import a Studio package: import <dir> [--slug s] [--force]", run: importStudio },
+  import: { summary: "import a Studio package: import <dir|file.zip> [--slug s] [--force]", run: importStudio },
   check: { summary: "validate drafts: check <slug> [--strict]", run: check },
-  approve: { summary: "review and approve drafts (interactive): approve <slug> [--only a,b]", run: approve },
+  approve: { summary: "review and approve drafts (interactive): approve <slug> [--only a,b] [--no-preview]", run: approve },
   publish: {
     summary: "publish approved drafts: publish <slug> [--yes] [--stage] [--only a,b] [--force] [--open] [--assist]",
     run: publish,

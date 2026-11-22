@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { basename, extname } from "node:path";
+import { basename } from "node:path";
+import { gistText } from "../media.ts";
 import { UserError } from "../types.ts";
 import type { Ctx, Destination, ResolvedPost } from "../types.ts";
 import { requestJson } from "./http.ts";
@@ -8,18 +9,9 @@ function payload(post: ResolvedPost, ctx: Ctx) {
   const files: Record<string, { content: string }> = { "README.md": { content: post.body } };
   for (const media of post.media ?? []) {
     const name = basename(media.path);
-    const extension = extname(name).toLowerCase();
-    if (extension !== ".svg" && media.kind !== "text") {
-      throw new UserError(`gist attachment ${media.path}: only SVG and text are supported`);
-    }
+    const data = media.data ?? readFileSync(media.path);
     if (Object.hasOwn(files, name)) throw new UserError(`gist attachment ${media.path}: duplicate filename`);
-    const data = readFileSync(media.path);
-    let content: string;
-    try { content = new TextDecoder("utf-8", { fatal: true }).decode(data); }
-    catch { throw new UserError(`gist attachment ${media.path}: invalid UTF-8 text`); }
-    if (/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(content)) {
-      throw new UserError(`gist attachment ${media.path}: binary content is not supported`);
-    }
+    const content = gistText(media, data);
     files[name] = { content };
   }
   return { description: post.title, public: ctx.config.gist.public !== false, files };

@@ -37,15 +37,17 @@ media:
     alt: Diagram showing the data flow from source to destination
 ```
 
-`mblast check` validates paths, alt text and destination limits. Approval displays each path and description; enter `p` at the approval prompt to open previews. Changing file bytes invalidates approval. All media preflight checks run before any upload or post.
+`mblast check` validates paths, alt text and destination limits. Approval displays each path and description and opens previews; use `--no-preview` to suppress them. Changing file bytes invalidates approval. All media preflight checks run before any upload or post.
 
 | Destination | Media delivery |
 |---|---|
 | Bluesky | Up to four images, 2,000,000 bytes each, replace any link card; one MP4 video up to 300,000,000 bytes may instead have VTT captions (`captions: media/captions.vtt` on the video, or a separate `kind: vtt` attachment; optional `lang`). Video delivery needs `ffprobe`. |
-| Mastodon | Images or video are uploaded with descriptions. Check uses defaults of four attachments, 16,777,216 image bytes and 103,809,024 video bytes; `mastodon.maxMediaAttachments`, `imageSizeLimit` and `videoSizeLimit` override them. Instance limits are checked at preflight. |
+| Mastodon | Images or video are uploaded with descriptions. Check uses defaults of four attachments, 16,777,216 image bytes and 103,809,024 video bytes; `mastodon.maxMediaAttachments`, `imageSizeLimit` and `videoSizeLimit` override them. Instance limits are checked at preflight. Processing may take up to 10 minutes by default; configure `mastodon.processingTimeoutMs` to change that. |
 | LinkedIn | API mode sends images with alt text. A PDF carousel is a manual handoff, even in API mode. |
-| DEV | A cover marked `cover: true` uses the hosted `devto.coverUrl`; local media is not uploaded. Host inline images yourself. |
+| DEV | The configured HTTPS `devto.coverUrl` is used as the cover; local media is not uploaded. Host inline images yourself. |
 | Gist | SVG and UTF-8 text attachments only; binary files are rejected. |
 | Manual destinations | The handoff lists files for the human to attach. |
+
+GIF attachments for Bluesky, Mastodon and LinkedIn must be exported as MP4 from Studio. API destinations without media support reject attachments; use a handoff or attach them manually.
 
 The approved [auth and reach design](design/auth-and-reach.md) discusses additional platforms such as daily.dev and Lobsters, but they are not destination IDs in this implementation. Discord was deferred. For settings and credential precedence, see [configuration](configuration.md).

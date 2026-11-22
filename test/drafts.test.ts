@@ -143,3 +143,15 @@ test("media validation enforces Bluesky image count and byte boundaries", () => 
   findings = checkCampaign(loadConfig(root), join(root, "campaigns/a")).findings;
   assert(findings.some((finding) => finding.message.includes("exceeds limit 2000000")));
 });
+
+test("checks reject GIF media and unsupported API attachments", () => {
+  const root = project({
+    "market-blaster.yml": "brand: { name: Demo }\ndestinations: [bluesky, nostr]\n",
+    "campaigns/a/drafts/bluesky.md": "---\ndestination: bluesky\nevidence: [E1]\nmedia:\n  - { path: animation.gif, kind: gif, alt: Animation }\n---\nPost\n",
+    "campaigns/a/drafts/nostr.md": "---\ndestination: nostr\nevidence: [E1]\nmedia:\n  - { path: animation.gif, kind: image, alt: Animation }\n---\nPost\n",
+    "campaigns/a/animation.gif": "gif",
+  });
+  const findings = checkCampaign(loadConfig(root), join(root, "campaigns/a")).findings;
+  assert(findings.some((finding) => finding.destination === "bluesky" && finding.message.includes("export MP4")));
+  assert(findings.some((finding) => finding.destination === "nostr" && finding.message.includes("attach by hand")));
+});

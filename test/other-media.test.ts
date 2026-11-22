@@ -5,6 +5,7 @@ import { loadConfig } from "../src/config.ts";
 import { linkedin } from "../src/destinations/crosspost.ts";
 import { devto } from "../src/destinations/devto.ts";
 import { gist } from "../src/destinations/gist.ts";
+import { uploadTimeout } from "../src/destinations/http.ts";
 import type { Ctx, ResolvedPost } from "../src/types.ts";
 import { BASIC_CONFIG, mockFetch, tempProject } from "./helpers.ts";
 
@@ -37,6 +38,8 @@ test("DEV sends its hosted cover and preserves hosted inline images", async () =
   assert.equal(article.main_image, "https://cdn.example/cover.png");
   assert.equal(article.body_markdown, "![diagram](https://cdn.example/diagram.png)");
   await assert.rejects(devto.create!({ ...post, body: "![diagram](./diagram.png)" }, ctx, { stage: false }), /hosted/);
+  ctx.config.devto.coverUrl = "http://cdn.example/cover.png";
+  await assert.rejects(devto.create!({ ...post, body: "Hello" }, ctx, { stage: false }), /HTTPS/);
   assert.equal(mock.calls.length, 1);
 });
 
@@ -56,4 +59,10 @@ test("Gist publishes SVG and text files and rejects binary attachments before a 
   await assert.rejects(gist.create!(binary, ctx, { stage: false }), /only SVG and text/);
   await assert.rejects(gist.preflight!({ ...post, media: [{ path: join(root, "bad.txt"), alt: "Bad", kind: "text" }] }, ctx), /binary content/);
   assert.equal(mock.calls.length, 1);
+});
+
+test("upload timeouts scale with size and remain bounded", () => {
+  assert.equal(uploadTimeout(0), 30_000);
+  assert.equal(uploadTimeout(300_000_000), 330_000);
+  assert.equal(uploadTimeout(1_000_000_000), 900_000);
 });

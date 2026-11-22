@@ -5,6 +5,7 @@ import { loadDrafts } from "./drafts.ts";
 import { measureBody, measureTitle } from "./limits.ts";
 import { linksIn, resolveLinks } from "./links.ts";
 import { reviewHash } from "./manifest.ts";
+import { gistText, isPdf } from "./media.ts";
 import type { Config, DestinationId, Draft } from "./types.ts";
 
 export interface Finding { destination: DestinationId; level: "error" | "warning"; message: string }
@@ -25,6 +26,14 @@ export function checkCampaign(config: Config, campaign: string, opts: { only?: D
     if (!draft) { add("error", "missing draft"); continue; }
     if (draft.skip) continue;
     const mediaItems = draft.media ?? [];
+    if (mediaItems.length && (["hashnode", "github-discussion", "nostr"].includes(destination)
+      || (destination === "x" && config.x.api))) {
+      add("error", "API publishing cannot attach media; attach by hand or use handoff");
+    }
+    if (["bluesky", "mastodon", "linkedin"].includes(destination)
+      && mediaItems.some((media) => media.kind === "gif" || /\.gif$/i.test(media.path))) {
+      add("error", "GIF attachments are not supported; export MP4 from Studio instead");
+    }
     if (destination === "bluesky") {
       const images = mediaItems.filter((media) => media.kind === "image");
       const videos = mediaItems.filter((media) => media.kind === "video");
@@ -38,12 +47,11 @@ export function checkCampaign(config: Config, campaign: string, opts: { only?: D
         add("error", "Bluesky captions require a video");
     }
     if (destination === "mastodon" && mediaItems.length) {
-      add("warning", "Mastodon media limits use configured defaults; instance limits are verified at publish preflight");
       if (mediaItems.length > (config.mastodon.maxMediaAttachments ?? 4)) add("error", "Mastodon media exceeds configured attachment count");
       if (mediaItems.some((media) => !["image", "video"].includes(media.kind)))
         add("error", "Mastodon supports image and video attachments only");
     }
-    if (destination === "linkedin" && config.linkedin.api && !mediaItems.some((media) => media.kind === "pdf" || /\.pdf$/i.test(media.path))) {
+    if (destination === "linkedin" && config.linkedin.api && !mediaItems.some(isPdf)) {
       if (mediaItems.length > 20) add("error", "LinkedIn allows at most 20 images");
       if (mediaItems.some((media) => media.kind !== "image")) add("error", "LinkedIn API supports image attachments only");
     }
@@ -65,10 +73,8 @@ export function checkCampaign(config: Config, campaign: string, opts: { only?: D
           : undefined;
         if (limit !== undefined && size > limit) add("error", `media ${media.path}: ${size} bytes exceeds limit ${limit}`);
         if (destination === "gist") {
-          const bytes = readFileSync(file);
-          if (!/\.(?:svg|txt|md|markdown|json|ya?ml|csv|xml|html|css|js|ts|log)$/i.test(file)
-            || bytes.includes(0) || !Buffer.from(bytes.toString("utf8")).equals(bytes))
-            add("error", `media ${media.path}: Gist accepts SVG and UTF-8 text only`);
+          try { gistText(media, readFileSync(file)); }
+          catch (err) { add("error", (err as Error).message); }
         }
       } catch { add("error", `media ${media.path}: missing or not campaign-local`); }
     }

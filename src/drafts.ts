@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { isDestinationId } from "./links.ts";
+import { validateMedia } from "./manifest.ts";
 import { UserError, type DestinationId, type Draft } from "./types.ts";
 
 export function draftsDir(campaign: string): string {
@@ -25,16 +26,7 @@ export function parseDraft(path: string, text: string): Draft {
   const destination = String(front.destination ?? "");
   if (!isDestinationId(destination)) throw new UserError(`${path}: unknown or missing destination "${destination}"`);
   const list = (v: unknown) => (Array.isArray(v) ? v.map(String) : typeof v === "string" ? [v] : []);
-  if (front.media !== undefined && (!Array.isArray(front.media) || front.media.some((item: unknown) =>
-    !item || typeof item !== "object" || Array.isArray(item)
-    || typeof (item as Record<string, unknown>).path !== "string"
-    || typeof (item as Record<string, unknown>).alt !== "string"
-    || typeof (item as Record<string, unknown>).kind !== "string"
-    || ((item as Record<string, unknown>).cover !== undefined && typeof (item as Record<string, unknown>).cover !== "boolean")
-    || ((item as Record<string, unknown>).lang !== undefined && (typeof (item as Record<string, unknown>).lang !== "string"
-      || !/^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/.test((item as Record<string, unknown>).lang as string)))
-    || ((item as Record<string, unknown>).captions !== undefined && ((item as Record<string, unknown>).kind !== "video"
-      || typeof (item as Record<string, unknown>).captions !== "string" || !/\.vtt$/i.test((item as Record<string, unknown>).captions as string)))))) {
+  if (front.media !== undefined && (!Array.isArray(front.media) || front.media.some((item: unknown) => !validateMedia(item)))) {
     throw new UserError(`${path}: invalid media frontmatter`);
   }
   if (front.studio !== undefined && (!front.studio || typeof front.studio !== "object"

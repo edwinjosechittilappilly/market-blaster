@@ -52,7 +52,7 @@ export interface Config {
   gist: { public?: boolean };
   bluesky: { host?: string; langs?: string[] };
   /** `maxChars`: the instance's status limit; the adapter reads it from the instance at preflight. */
-  mastodon: { host?: string; maxChars?: number; maxMediaAttachments?: number; imageSizeLimit?: number; videoSizeLimit?: number };
+  mastodon: { host?: string; maxChars?: number; maxMediaAttachments?: number; imageSizeLimit?: number; videoSizeLimit?: number; processingTimeoutMs?: number };
   linkedin: { api?: boolean };
   x: { api?: boolean };
   reddit: { subreddit?: string };
@@ -70,9 +70,9 @@ export interface Draft {
   body: string;
   /** Set when the agent or author decided this destination should not get a post; the value is the reason. */
   skip?: string;
-  /** Path of the draft file. */
   media?: { path: string; alt: string; kind: string; cover?: boolean; lang?: string; captions?: string }[];
   studio?: { reviewHash: string; verdict: string };
+  /** Path of the draft file. */
   path: string;
 }
 
@@ -84,7 +84,7 @@ export interface ResolvedPost {
   canonical?: string;
   body: string;
   /** Attachments have absolute, campaign-local paths after resolution. */
-  media?: Draft["media"];
+  media?: (NonNullable<Draft["media"]>[number] & { data?: Buffer<ArrayBuffer> })[];
   /** Hash of the draft before link resolution; the approval key. */
   contentHash: string;
 }
@@ -114,6 +114,9 @@ export interface Ctx {
   env: Env;
   config: Config;
   timeoutMs: number;
+  /** Injectable delay for asynchronous media processing. */
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
   /** Runs a command and returns stdout; used for `gh auth token`. Injected for tests. */
   run?: (cmd: string, args: string[]) => Promise<string>;
   crosspost?: (id: "x" | "linkedin" | "nostr", env: Env) => {

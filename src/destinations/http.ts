@@ -6,9 +6,14 @@ export function redactAdapter(text: string, ctx: Ctx, id: DestinationId): string
   const keys = [...META[id].env, ...(id === "bluesky" ? ["BLUESKY_HOST"] : id === "mastodon" ? ["MASTODON_HOST"] : [])];
   return keys.reduce((value, key) => ctx.env[key] ? value.split(ctx.env[key]!).join("***") : value, text);
 }
+/** Allow transfer time proportional to upload size, bounded to fifteen minutes. */
+export function uploadTimeout(bytes: number): number {
+  return Math.min(900_000, 30_000 + Math.ceil(bytes / 1_000_000) * 1_000);
+}
+
 
 export async function requestJson<T>(ctx: Ctx, id: DestinationId, url: string, init: RequestInit = {}): Promise<T> {
-  const response = await ctx.fetch(url, { ...init, redirect: "manual", signal: AbortSignal.timeout(ctx.timeoutMs) });
+  const response = await ctx.fetch(url, { ...init, redirect: "manual", signal: init.signal ?? AbortSignal.timeout(ctx.timeoutMs) });
   if (!response.ok || response.type === "opaqueredirect") {
     const text = redactAdapter((await response.text()).slice(0, 200), ctx, id);
     const hint = id === "hashnode"

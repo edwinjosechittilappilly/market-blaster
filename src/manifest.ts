@@ -32,6 +32,14 @@ export function reviewHash(post: { title?: string; body: string; media: StudioMe
 const object = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 const strings = (x: unknown): x is string[] => Array.isArray(x) && x.every((s) => typeof s === "string");
 
+/** Validate media fields shared by drafts and both manifest versions. */
+export function validateMedia(value: unknown): value is StudioMedia {
+  return object(value) && typeof value.path === "string" && typeof value.alt === "string"
+    && typeof value.kind === "string" && (value.cover === undefined || typeof value.cover === "boolean")
+    && (value.lang === undefined || (typeof value.lang === "string" && /^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/.test(value.lang)))
+    && (value.captions === undefined || (value.kind === "video" && typeof value.captions === "string" && /\.vtt$/i.test(value.captions)));
+}
+
 /** Resolve a regular package file without allowing path traversal or symlink escapes. */
 export function packageFile(root: string, path: string): string {
   if (!path || isAbsolute(path)) throw new UserError(`invalid package path: ${path}`);
@@ -58,11 +66,7 @@ export function loadManifest(root: string): StudioManifest {
       || typeof post.destination !== "string" || !isDestinationId(post.destination) || seen.has(post.destination)
       || (post.title !== undefined && typeof post.title !== "string") || typeof post.body !== "string"
       || !strings(post.evidence) || !Array.isArray(post.media)
-      || post.media.some((m: unknown) => !object(m) || typeof m.path !== "string" || !m.path
-        || typeof m.alt !== "string" || typeof m.kind !== "string" || !m.kind
-        || (m.cover !== undefined && typeof m.cover !== "boolean")
-        || (m.lang !== undefined && (typeof m.lang !== "string" || !/^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/.test(m.lang)))
-        || (m.captions !== undefined && (m.kind !== "video" || typeof m.captions !== "string" || !/\.vtt$/i.test(m.captions))))
+      || post.media.some((m: unknown) => !validateMedia(m) || !m.path || !m.kind)
       || (post.thread !== undefined && !strings(post.thread))
       || (post.disclosure !== undefined && (!object(post.disclosure) || Object.entries(post.disclosure).some(([k, v]) =>
         !["text", "media", "voice"].includes(k) || typeof v !== "string")))
@@ -83,11 +87,7 @@ export function loadCampaignManifest(root: string): CampaignManifest {
   const review = (r: unknown, hash: boolean) => r === null || (object(r)
     && typeof r.verdict === "string" && (r.total === null || (typeof r.total === "number" && Number.isFinite(r.total) && r.total >= 0 && r.total <= 100))
     && (!hash || (typeof r.reviewHash === "string" && /^[a-f0-9]{64}$/.test(r.reviewHash))));
-  const media = (m: unknown) => object(m) && typeof m.path === "string" && !!m.path
-    && typeof m.alt === "string" && ["image", "video", "gif", "document"].includes(String(m.kind))
-    && (m.cover === undefined || typeof m.cover === "boolean")
-    && (m.lang === undefined || (typeof m.lang === "string" && /^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/.test(m.lang)))
-    && (m.captions === undefined || (m.kind === "video" && typeof m.captions === "string" && /\.vtt$/i.test(m.captions)));
+  const media = (m: unknown) => validateMedia(m) && !!m.path && ["image", "video", "gif", "document"].includes(m.kind);
   if (!object(value) || value.version !== 2 || value.kind !== "blast-studio-campaign"
     || typeof value.slug !== "string" || !/^[a-z0-9][a-z0-9-]*$/.test(value.slug)
     || typeof value.title !== "string" || typeof value.generatedAt !== "string" || !Number.isFinite(Date.parse(value.generatedAt))

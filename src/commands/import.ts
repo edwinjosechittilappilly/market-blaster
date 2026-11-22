@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -11,7 +11,47 @@ import { draftPath, parseDraft } from "../drafts.ts";
 import type { Command, IO } from "../io.ts";
 import { loadCampaignManifest, loadManifest, packageFile } from "../manifest.ts";
 import { loadState, saveState, withStateLock } from "../state.ts";
-import { UserError } from "../types.ts";
+import { UserError, type Config, type DestinationId } from "../types.ts";
+
+async function writeImport(
+  campaign: string, config: Config, io: IO, force: boolean | undefined,
+  destinations: DestinationId[], skipped: DestinationId[], paths: string[], write: () => void,
+  report?: () => void,
+): Promise<number> {
+  return withStateLock(campaign, async () => {
+    const state = loadState(campaign);
+    const approved = [...new Set(destinations)].filter((id) => state[id]?.approvedHash);
+    if (approved.length && !force) throw new UserError(`approved drafts would be overwritten: ${approved.join(", ")}; use --force`);
+    const replaced = [...new Set(paths)].filter((path) => existsSync(join(campaign, path))).sort();
+    if (replaced.length) {
+      io.err("Warning: import will replace existing files:");
+      for (const path of replaced) io.err(`  ${path}`);
+    }
+    if (approved.length) {
+      for (const id of approved) delete state[id]!.approvedHash;
+      saveState(campaign, state);
+    }
+    write();
+    for (const id of skipped) {
+      const path = draftPath(campaign, id);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, `---\n${stringify({ destination: id, skip: "not planned in studio" })}---\n`);
+    }
+    const { findings } = checkCampaign(config, campaign);
+    for (const f of findings) io.out(`${f.destination}  ${f.level}  ${f.message}`);
+    const errors = findings.filter((f) => f.level === "error").length;
+    io.out(`${errors} error(s), ${findings.length - errors} warning(s)`);
+    report?.();
+    return errors ? 1 : 0;
+  });
+}
+
+function packageFiles(root: string, folder: string): string[] {
+  const path = join(root, folder);
+  if (!existsSync(path)) return [];
+  if (!statSync(path).isDirectory()) return [folder];
+  return readdirSync(path).flatMap((name) => packageFiles(root, join(folder, name)));
+}
 
 export const run: Command = async (args, io) => {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
@@ -19,7 +59,14 @@ export const run: Command = async (args, io) => {
   } });
   if (positionals.length !== 1) throw new UserError("usage: mblast import <dir|file.zip> [--slug s] [--force]");
   const root = resolve(io.cwd, positionals[0]);
-  if (!statSync(root).isDirectory()) {
+  let input;
+  try { input = statSync(root); }
+  catch (err) {
+    if (["ENOENT", "ENOTDIR"].includes((err as NodeJS.ErrnoException).code ?? "")) throw new UserError(`import path not found: ${positionals[0]}`);
+    throw err;
+  }
+  if (!input.isDirectory()) {
+    if (!input.isFile() || !root.toLowerCase().endsWith(".zip")) throw new UserError(`import path must be a directory or .zip file: ${positionals[0]}`);
     const temp = mkdtempSync(join(tmpdir(), "mblast-import-"));
     try {
       extractCampaignZip(root, temp);
@@ -38,15 +85,14 @@ export const run: Command = async (args, io) => {
     return { source, path: `media/${dir}/${basename(item.path)}`, alt: item.alt, kind: item.kind,
       cover: item.cover, lang: item.lang, captions, captionSource };
   }) }));
-  return withStateLock(campaign, async () => {
-    const state = loadState(campaign);
-    const destinations = new Set([...config.destinations, ...manifest.posts.map((post) => post.destination)]);
-    const approved = [...destinations].filter((id) => state[id]?.approvedHash);
-    if (approved.length && !values.force) throw new UserError(`approved drafts would be overwritten: ${approved.join(", ")}; use --force`);
-    if (approved.length) {
-      for (const id of approved) delete state[id]!.approvedHash;
-      saveState(campaign, state);
-    }
+  const skipped = config.destinations.filter((id) => !manifest.posts.some((post) => post.destination === id));
+  const paths = ["brief.md", ...[...manifest.posts.map((post) => post.destination), ...skipped].map((id) => `drafts/${id}.md`),
+    ...prepared.flatMap(({ post, media }) => [
+      ...media.flatMap((item) => [item.path, ...(item.captions ? [item.captions] : [])]),
+      ...(post.thread?.length ? [`handoff/${post.destination}-thread.md`] : []),
+    ])];
+  return writeImport(campaign, config, io, values.force,
+    [...config.destinations, ...manifest.posts.map((post) => post.destination)], skipped, paths, () => {
     writeFileSync(join(campaign, "brief.md"), brief);
     for (const { post, media } of prepared) {
       for (const item of media) {
@@ -72,17 +118,6 @@ export const run: Command = async (args, io) => {
         writeFileSync(handoff, [post.body.trim(), ...post.thread].join("\n\n---\n\n") + "\n");
       }
     }
-    for (const destination of config.destinations) {
-      if (manifest.posts.some((post) => post.destination === destination)) continue;
-      const path = draftPath(campaign, destination);
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, `---\n${stringify({ destination, skip: "not planned in studio" })}---\n`);
-    }
-    const { findings } = checkCampaign(config, campaign);
-    for (const f of findings) io.out(`${f.destination}  ${f.level}  ${f.message}`);
-    const errors = findings.filter((f) => f.level === "error").length;
-    io.out(`${errors} error(s), ${findings.length - errors} warning(s)`);
-    return errors ? 1 : 0;
   });
 };
 
@@ -118,14 +153,9 @@ async function importCampaignZip(root: string, io: IO, slug: string | undefined,
     parseDraft(d.post, output);
     return { id: d.id, text: output };
   });
-  return withStateLock(campaign, async () => {
-    const state = loadState(campaign);
-    const approved = config.destinations.filter((id) => state[id]?.approvedHash);
-    if (approved.length && !force) throw new UserError(`approved drafts would be overwritten: ${approved.join(", ")}; use --force`);
-    if (approved.length) {
-      for (const id of approved) delete state[id]!.approvedHash;
-      saveState(campaign, state);
-    }
+  const paths = ["brief.md", ...[...prepared.map((item) => item.id), ...skipped].map((id) => `drafts/${id}.md`),
+    ...["sources", "media", "handoff", "review"].flatMap((folder) => packageFiles(root, folder))];
+  return writeImport(campaign, config, io, force, config.destinations, skipped, paths, () => {
     writeFileSync(join(campaign, "brief.md"), brief);
     for (const folder of ["sources", "media", "handoff", "review"]) {
       const source = join(root, folder);
@@ -136,20 +166,11 @@ async function importCampaignZip(root: string, io: IO, slug: string | undefined,
       mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, item.text);
     }
-    for (const id of skipped) {
-      const path = draftPath(campaign, id);
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, `---\n${stringify({ destination: id, skip: "not planned in studio" })}---\n`);
-    }
-    const { findings } = checkCampaign(config, campaign);
-    for (const f of findings) io.out(`${f.destination}  ${f.level}  ${f.message}`);
-    const errors = findings.filter((f) => f.level === "error").length;
-    io.out(`${errors} error(s), ${findings.length - errors} warning(s)`);
+  }, () => {
     io.out(`Imported: ${imported.map((d) => d.id).join(", ") || "none"}`);
     io.out(`Skipped: ${skipped.join(", ") || "none"}`);
     io.out(`Not enabled: ${unavailable.map((d) => d.id).join(", ") || "none"}`);
     for (const d of unavailable) io.out(`  Add to market-blaster.yml destinations: - ${d.id}`);
     io.out(`Manual: ${manifest.manual.map((m) => m.platform).join(", ") || "none"}`);
-    return errors ? 1 : 0;
   });
 }

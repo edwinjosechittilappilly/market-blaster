@@ -24,7 +24,7 @@ function setup(ids: DestinationId[], extra = "", drafts: Partial<Record<Destinat
   return { root, config, campaign: join(root, "campaigns/test") };
 }
 async function approveAll(root: string) {
-  const io = fakeIO({ cwd: root, isTTY: true, answers: Array(20).fill("y") });
+  const io = fakeIO({ cwd: root, isTTY: true, answers: Array(20).fill("y"), run: async () => "" });
   assert.equal(await approve(["test"], io), 0, io.text());
 }
 const okDev = () => [200, { id: 7, url: "https://dev.to/post" }] as [number, unknown];
@@ -44,24 +44,40 @@ test("approval gates content and dry run respects staging", async () => {
   assert.match(io.text(), /not approved/);
 });
 
-test("media approval lists attachments and previews only on request", async () => {
+test("media approval opens previews by default and can disable them", async () => {
   const s = setup(["x"], "", { x: "---\ndestination: x\nevidence: [E1]\nmedia:\n  - path: image.png\n    alt: A mountain\n    kind: image\n---\nGrounded evidence\n" });
   const image = join(s.campaign, "image.png");
   writeFileSync(image, "image bytes");
   const calls: { cmd: string; args: string[] }[] = [];
   const run = async (cmd: string, args: string[]) => { calls.push({ cmd, args }); return ""; };
-  const plain = fakeIO({ cwd: s.root, isTTY: true, answers: ["n"], run });
-  assert.equal(await approve(["test"], plain), 0);
-  assert.match(plain.text(), /image\.png/);
-  assert.match(plain.text(), /A mountain/);
-  assert.equal(calls.length, 0);
-  const preview = fakeIO({ cwd: s.root, isTTY: true, answers: ["p", "y"], run });
+  const preview = fakeIO({ cwd: s.root, isTTY: true, answers: ["y"], run });
   assert.equal(await approve(["test"], preview), 0);
+  assert.match(preview.text(), /image\.png/);
+  assert.match(preview.text(), /A mountain/);
   assert.deepEqual(calls, [{
     cmd: process.platform === "darwin" ? "open" : "xdg-open",
     args: [image],
   }]);
   assert.ok(loadState(s.campaign).x?.approvedHash);
+  calls.length = 0;
+  const plain = fakeIO({ cwd: s.root, isTTY: true, answers: ["n"], run });
+  assert.equal(await approve(["test", "--no-preview"], plain), 0);
+  assert.equal(calls.length, 0);
+});
+
+test("media approval previews a video's captions too", async () => {
+  const s = setup(["x"], "", {
+    x: "---\ndestination: x\nevidence: [E1]\nmedia:\n  - path: video.mp4\n    alt: Video\n    kind: video\n    captions: subtitles.vtt\n---\nGrounded evidence\n",
+  });
+  writeFileSync(join(s.campaign, "video.mp4"), "video bytes");
+  writeFileSync(join(s.campaign, "subtitles.vtt"), "WEBVTT\n");
+  const paths: string[] = [];
+  const io = fakeIO({ cwd: s.root, isTTY: true, answers: ["y"], run: async (_cmd, args) => {
+    paths.push(args[0]);
+    return "";
+  } });
+  assert.equal(await approve(["test"], io), 0);
+  assert.deepEqual(paths, [join(s.campaign, "video.mp4"), join(s.campaign, "subtitles.vtt")]);
 });
 
 test("changing attachment bytes invalidates approval before publishing", async () => {
@@ -150,6 +166,112 @@ test("preflight credential failure prevents all writes", async () => {
   assert.equal(await publishCampaign({ ...s, io, env, adapters: ADAPTERS, yes: true }), 1);
   assert.equal(net.calls.filter(c => c.method !== "GET").length, 0); assert.equal(loadState(s.campaign).devto?.status, undefined);
   assert.match(io.text(), /mastodon: preflight failed/);
+});
+
+test("later Mastodon media limit failure prevents earlier DEV post", async () => {
+  const s = setup(["devto", "mastodon"], "mastodon:\n  host: example.com\ndevto:\n  publish: true\n", {
+    mastodon: "---\ndestination: mastodon\nevidence: [E1]\nmedia:\n  - path: image.png\n    alt: Image\n    kind: image\n---\nGrounded evidence\n",
+  });
+  writeFileSync(join(s.campaign, "image.png"), "image bytes");
+  await approveAll(s.root);
+  const net = mockFetch(c => c.url.includes("/api/v2/instance")
+    ? [200, { configuration: { media_attachments: { image_size_limit: 1 } } }]
+    : c.method === "GET" ? [200, {}] : okDev());
+  const io = fakeIO({ cwd: s.root, fetch: net.fetch });
+  assert.equal(await publishCampaign({ ...s, io, env, adapters: ADAPTERS, yes: true }), 1);
+  assert.match(io.text(), /mastodon: preflight failed/);
+  assert.equal(net.calls.filter(c => c.method !== "GET").length, 0);
+  assert.equal(loadState(s.campaign).devto?.status, undefined);
+});
+
+test("unsupported X API media prevents every destination from posting", async () => {
+  const s = setup(["devto", "x"], "devto:\n  publish: true\nx:\n  api: true\n", {
+    x: "---\ndestination: x\nevidence: [E1]\nmedia:\n  - path: image.png\n    alt: Image\n    kind: image\n---\nGrounded evidence\n",
+  });
+  writeFileSync(join(s.campaign, "image.png"), "image bytes");
+  const net = mockFetch(() => okDev());
+  const io = fakeIO({ cwd: s.root, fetch: net.fetch });
+  assert.equal(await publishCampaign({ ...s, io, env, adapters: ADAPTERS, yes: true }), 1);
+  assert.match(io.text(), /cannot attach media/i);
+  assert.equal(net.calls.length, 0);
+  assert.equal(loadState(s.campaign).devto?.status, undefined);
+});
+
+test("a later unapproved attachment prevents earlier destinations from posting", async () => {
+  const s = setup(["devto", "mastodon"], "mastodon:\n  host: example.com\ndevto:\n  publish: true\n", {
+    mastodon: "---\ndestination: mastodon\nevidence: [E1]\nmedia:\n  - path: image.png\n    alt: Image\n    kind: image\n---\nGrounded evidence\n",
+  });
+  const image = join(s.campaign, "image.png");
+  writeFileSync(image, "approved bytes");
+  await approveAll(s.root);
+  writeFileSync(image, "different bytes");
+  const net = mockFetch(() => okDev());
+  const io = fakeIO({ cwd: s.root, fetch: net.fetch });
+  assert.equal(await publishCampaign({ ...s, io, env, adapters: ADAPTERS, yes: true }), 1);
+  assert.match(io.text(), /mastodon: refused: draft is not approved or has changed/);
+  assert.equal(net.calls.length, 0);
+  assert.equal(loadState(s.campaign).devto?.status, undefined);
+});
+
+test("Gist publishes the approved attachment bytes even if the file changes during preflight", async () => {
+  const s = setup(["gist"], "", {
+    gist: "---\ndestination: gist\ntitle: Test title\nevidence: [E1]\nmedia:\n  - path: example.svg\n    alt: Illustration\n    kind: text\n---\nGrounded evidence\n",
+  });
+  const image = join(s.campaign, "example.svg");
+  writeFileSync(image, "<svg>approved</svg>");
+  await approveAll(s.root);
+  const net = mockFetch(c => {
+    if (c.method === "GET") {
+      writeFileSync(image, "<svg>changed</svg>");
+      return [200, {}];
+    }
+    return [201, { id: "1", html_url: "https://gist.github.com/1" }];
+  });
+  const io = fakeIO({ cwd: s.root, fetch: net.fetch });
+  assert.equal(await publishCampaign({ ...s, io, env: { GITHUB_TOKEN: "token" }, adapters: ADAPTERS, yes: true }), 0);
+  const request = net.calls.find(c => c.method === "POST");
+  assert.ok(request);
+  assert.equal(JSON.parse(request.body).files["example.svg"].content, "<svg>approved</svg>");
+});
+
+test("Mastodon uploads the approved bytes when the source changes during verification", async () => {
+  const s = setup(["mastodon"], "mastodon:\n  host: example.com\n", {
+    mastodon: "---\ndestination: mastodon\nevidence: [E1]\nmedia:\n  - path: image.png\n    alt: Image\n    kind: image\n---\nGrounded evidence\n",
+  });
+  const image = join(s.campaign, "image.png");
+  writeFileSync(image, "approved bytes");
+  await approveAll(s.root);
+  let uploaded = "";
+  const fetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
+    const url = String(input);
+    if (url.includes("verify_credentials")) writeFileSync(image, "changed bytes");
+    if (url.endsWith("/api/v2/media")) {
+      const file = (init.body as FormData).get("file");
+      assert.ok(file instanceof Blob);
+      uploaded = await file.text();
+      return new Response(JSON.stringify({ id: "media1", url: "https://example.com/media1" }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (url.endsWith("/api/v1/statuses")) {
+      return new Response(JSON.stringify({ id: "post1", url: "https://example.com/post1" }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof globalThis.fetch;
+  const io = fakeIO({ cwd: s.root, fetch });
+  assert.equal(await publishCampaign({ ...s, io, env, adapters: ADAPTERS, yes: true }), 0);
+  assert.equal(uploaded, "approved bytes");
+});
+
+test("binary Gist attachment stops all publish writes", async () => {
+  const s = setup(["devto", "gist"], "devto:\n  publish: true\n", {
+    gist: "---\ndestination: gist\ntitle: Test title\nevidence: [E1]\nmedia:\n  - path: data.svg\n    alt: Illustration\n    kind: text\n---\nGrounded evidence\n",
+  });
+  writeFileSync(join(s.campaign, "data.svg"), Buffer.from([0, 1, 2]));
+  const net = mockFetch(() => okDev());
+  const io = fakeIO({ cwd: s.root, fetch: net.fetch });
+  assert.equal(await publishCampaign({ ...s, io, env: { ...env, GITHUB_TOKEN: "token" }, adapters: ADAPTERS, yes: true }), 1);
+  assert.match(io.text(), /binary content/i);
+  assert.equal(net.calls.length, 0);
+  assert.equal(loadState(s.campaign).devto?.status, undefined);
 });
 
 test("X API publishes without verification, changed social requires force", async () => {

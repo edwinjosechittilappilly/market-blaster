@@ -7,16 +7,15 @@ function payload(post: ResolvedPost, ctx: Ctx, stage = false) {
   if (tags.length > 4 || tags.some((tag) => !/^[a-z0-9]+$/.test(tag))) {
     throw new UserError("devto tags must be lowercase alphanumeric and at most four");
   }
-  if (ctx.config.devto.coverUrl && !/^https?:\/\//i.test(ctx.config.devto.coverUrl)) {
-    throw new UserError("devto coverUrl must be a hosted HTTP(S) URL");
+  if (ctx.config.devto.coverUrl && !/^https:\/\/[^/\s]+/i.test(ctx.config.devto.coverUrl)) {
+    throw new UserError("devto coverUrl must be a hosted HTTPS URL");
   }
   for (const match of post.body.matchAll(/!\[[^\]]*\]\(\s*<?([^)\s>]+)>?/g)) {
     if (!/^https?:\/\//i.test(match[1])) throw new UserError("devto inline images must use hosted HTTP(S) URLs");
   }
   return { article: {
     title: post.title, body_markdown: post.body, published: !stage && ctx.config.devto.publish === true,
-    tags, canonical_url: post.canonical, ...(post.media?.some((media) => media.cover) && ctx.config.devto.coverUrl
-      ? { main_image: ctx.config.devto.coverUrl } : {}),
+    tags, canonical_url: post.canonical, ...(ctx.config.devto.coverUrl ? { main_image: ctx.config.devto.coverUrl } : {}),
   } };
 }
 async function request(ctx: Ctx, path: string, method: string, body?: unknown) {
