@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "market_blaster",
+  "project_id": "c26053c7-4b8a-4d85-8f97-a00fc263bd67"
+}
