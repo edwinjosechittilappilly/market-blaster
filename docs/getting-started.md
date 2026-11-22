@@ -32,7 +32,9 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-The release workflow requires an `NPM_TOKEN` repository secret with permission to publish. It tests and publishes the package with provenance, then creates a GitHub release with the npm tarball. npm Trusted Publishing can replace the token after it is configured for this repository.
+The first publish requires an `NPM_TOKEN` repository secret with permission to publish, or a local `npm login` and publish, because trusted publishers can only be configured for an existing package. The release workflow tests and publishes with provenance, then creates a GitHub release with the npm tarball.
+
+After the first publish, to use npm Trusted Publishing instead of a token, open npmjs.com → package → Settings → Trusted Publisher and select GitHub Actions. Set the user to `edwinjosechittilappilly`, the repository to `market-blaster`, and the workflow to `release.yml`. Then delete the `NPM_TOKEN` repository secret; the workflow uses OIDC when the secret is unset.
 
 ## Configure your project
 
