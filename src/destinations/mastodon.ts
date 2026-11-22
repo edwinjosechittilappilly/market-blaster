@@ -1,0 +1,36 @@
+import { measureBody } from "../limits.ts";
+import { HttpError } from "../types.ts";
+import type { Ctx, Destination } from "../types.ts";
+import { META } from "./meta.ts";
+
+async function request(ctx: Ctx, path: string, init: RequestInit = {}): Promise<{ id: string; url: string; configuration?: { statuses?: { max_characters?: number } } }> {
+  const host = ctx.env.MASTODON_HOST || ctx.config.mastodon.host;
+  const response = await ctx.fetch(`https://${host}${path}`, {
+    ...init, headers: { authorization: `Bearer ${ctx.env.MASTODON_TOKEN ?? ""}`, ...init.headers }, signal: AbortSignal.timeout(ctx.timeoutMs),
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    const safe = Object.values(ctx.env).reduce<string>((s, v) => v ? s.split(v).join("***") : s, text.slice(0, 200));
+    throw new HttpError(response.status, `mastodon ${response.status}: ${safe}`);
+  }
+  return JSON.parse(text);
+}
+
+export const mastodon: Destination = {
+  id: "mastodon", kind: "social", env: META.mastodon.env,
+  limit: (text, ctx) => measureBody("mastodon", text, ctx.config),
+  payload: (post) => new URLSearchParams({ status: post.body, visibility: "public" }).toString(),
+  async verify(ctx) {
+    await request(ctx, "/api/v1/accounts/verify_credentials");
+    const instance = await request(ctx, "/api/v2/instance");
+    const max = instance.configuration?.statuses?.max_characters;
+    if (typeof max === "number" && max > 0) ctx.config.mastodon.maxChars = max;
+  },
+  async create(post, ctx) {
+    const data = await request(ctx, "/api/v1/statuses", {
+      method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", "idempotency-key": post.contentHash },
+      body: new URLSearchParams({ status: post.body, visibility: "public" }).toString(),
+    });
+    return { id: String(data.id), url: data.url };
+  },
+};

@@ -1,0 +1,26 @@
+{
+  "name": "market-blaster",
+  "version": "0.1.0",
+  "description": "Turn a shipped feature into grounded, platform-specific posts for DEV, Hashnode, Gist, Bluesky, Mastodon, LinkedIn, X, HN and Reddit.",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "bin": {
+    "mblast": "bin/mblast.mjs"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "node --test --test-reporter=spec \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@humanwhocodes/crosspost": "1.0.4",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}
