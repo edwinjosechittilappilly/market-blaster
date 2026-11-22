@@ -1,9 +1,10 @@
 import type { Ctx, Destination, ResolvedPost } from "../types.ts";
+import { UserError } from "../types.ts";
 import { requestJson } from "./http.ts";
 
 function payload(post: ResolvedPost, ctx: Ctx, stage = false) {
   const tags = post.tags ?? ctx.config.devto.tags ?? [];
-  if (tags.length > 4 || tags.some((tag) => !/^[a-z0-9]+$/.test(tag))) throw new Error("devto tags must be lowercase alphanumeric and at most four");
+  if (tags.length > 4 || tags.some((tag) => !/^[a-z0-9]+$/.test(tag))) throw new UserError("devto tags must be lowercase alphanumeric and at most four");
   return { article: { title: post.title, body_markdown: post.body, published: !stage && ctx.config.devto.publish === true, tags, canonical_url: post.canonical } };
 }
 async function request(ctx: Ctx, path: string, method: string, body?: unknown) {

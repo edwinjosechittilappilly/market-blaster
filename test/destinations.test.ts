@@ -39,7 +39,18 @@ test("handoffs and ordering use configured destinations", () => {
   const ctx: Ctx = { config, env: {}, fetch, timeoutMs: 1000 };
   assert.deepEqual(lemmy.handoff!(post, ctx), { url: "https://programming.dev/c/programming", prefills: "none" });
   assert.equal(newsletter.handoff!(post, ctx).url, "https://console.dev/selection-criteria");
-  assert.deepEqual(newsletterTargets(config).map((target) => target.url), ["https://console.dev/selection-criteria", "https://cooperpress.com/submit/", "https://cooperpress.com/submit/", "https://changelog.com/news/submit"]);
+  assert.deepEqual(newsletterTargets(config).map((target) => target.url), ["https://console.dev/selection-criteria", "https://cooperpress.com/submit/", "https://changelog.com/news/submit"]);
   assert.deepEqual(publishOrder(["lemmy", "nostr", "github-discussion", "gist", "x", "newsletter"]), ["gist", "github-discussion", "x", "nostr", "lemmy", "newsletter"]);
   assert.equal(config.nostr.relays.length, 3);
+});
+
+test("discussion preflight validates category and mutations preserve uncertain outcomes", async () => {
+  const missing = mockFetch(() => [200, { data: { repository: { id: "repo", discussionCategories: { nodes: [] } } } }]);
+  const ctx: Ctx = { config, env: {}, fetch: missing.fetch, timeoutMs: 1000 };
+  await assert.rejects(githubDiscussion.verify!(ctx), /category not found/);
+  const failure = mockFetch((call) => JSON.parse(call.body).query.includes("repository(owner:") ? [200, { data: { repository: { id: "repo", discussionCategories: { nodes: [{ id: "category", name: "Announcements" }] } } } }] : [200, { errors: [{ type: "RATE_LIMITED", message: "timeout" }] }]);
+  ctx.fetch = failure.fetch;
+  await assert.rejects(githubDiscussion.create!(post, ctx, { stage: false }), { name: "UncertainResponseError" });
+  ctx.fetch = mockFetch((call) => JSON.parse(call.body).query.includes("repository(owner:") ? [200, { data: { repository: { id: "repo", discussionCategories: { nodes: [{ id: "category", name: "Announcements" }] } } } }] : [200, { data: { createDiscussion: { discussion: { id: "ok", url: "https://github.com/ok" } } }, errors: [{ message: "partial" }] }]).fetch;
+  assert.equal((await githubDiscussion.create!(post, ctx, { stage: false })).id, "ok");
 });

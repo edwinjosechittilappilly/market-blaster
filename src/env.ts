@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ALL_ENV_VARS } from "./destinations/meta.ts";
-import { keychainGet } from "./keychain.ts";
 import type { Env } from "./types.ts";
 
 /** Parses KEY=VALUE lines; supports comments, `export ` prefixes and single/double quotes. */
@@ -25,7 +24,7 @@ export type EnvSource = "shell" | ".env" | "keychain";
 export function loadEnvWithSources(
   root: string,
   processEnv: Env = process.env,
-  keychain: (key: string) => string | undefined = (key) => process.platform === "darwin" ? keychainGet(key) : undefined,
+  keychain: (key: string) => string | undefined = () => undefined,
 ): { env: Env; sources: Record<string, EnvSource> } {
   const file = join(root, ".env");
   const fromFile = existsSync(file) ? parseDotenv(readFileSync(file, "utf8")) : {};

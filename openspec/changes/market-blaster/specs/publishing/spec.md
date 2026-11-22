@@ -30,17 +30,17 @@ per destination the mode, the resolved text or request payload, and the expected
 
 ### Requirement: Preflight before the first write
 Before any write, publishing SHALL run `check`, resolve links, re-check social lengths using known URLs (100 characters
-for unknown ones), and, for API destinations, perform one authenticated read. Any failure SHALL abort with nothing
-published.
+for unknown ones), and perform one authenticated read for each API destination whose platform offers one (X and Nostr
+offer none; preflight prints that and continues). Any failure SHALL abort with nothing published.
 
 #### Scenario: Bad credential
 - **WHEN** the Mastodon token is revoked and `publish --yes` runs
 - **THEN** preflight fails naming mastodon and no destination is published
 
 ### Requirement: Publish order and links from state
-Destinations SHALL publish in the order: canonical home, other long-form, gist, bluesky, mastodon, linkedin, x,
-handoffs. `{{url:<destination>}}` SHALL resolve from `state.json`; a draft whose link target is not `published` SHALL
-be recorded `blocked` with the reason and not posted.
+Destinations SHALL publish in the order: canonical home, other long-form, gist, github-discussion, bluesky, mastodon,
+linkedin, x, nostr, then handoffs. `{{url:<destination>}}` SHALL resolve from `state.json`; a draft whose link target
+is not `published` SHALL be recorded `blocked` with the reason and not posted.
 
 #### Scenario: Social links to the article
 - **WHEN** devto is published at U and `drafts/bluesky.md` contains `{{url:devto}}`

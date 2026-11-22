@@ -12,8 +12,8 @@ Draft the canonical home first. Social posts link to it with `{{url:<home>}}` wh
 ## AI policy
 
 - HN: never write generated HN text or a draft file. The human submits the canonical article.
-- Reddit and Product Hunt: write only bullet talking points, not a post. Suggest subreddit fit for Reddit and remind the human to disclose self-promotion and check community rules. The human writes the post.
-- Other destinations: write a first draft for human review. Gist requires a runnable example supported by the brief; otherwise write a skip file.
+- Reddit, Product Hunt, Lemmy and newsletter: write only bullet talking points, not a post. Suggest subreddit fit for Reddit and remind the human to disclose self-promotion and check community rules. The human writes the post.
+- Other destinations: write a first draft for human review. Gist requires a runnable example supported by the brief; otherwise write a skip file. The `aiPolicies` in brand.yml gives the policy for every enabled destination.
 
 ## Draft format
 
@@ -56,5 +56,5 @@ skip: "No runnable example in the brief"
 
 - Claims and evidence are grounded in the brief; no invented facts.
 - Every requested file has valid frontmatter and matches its destination; use a skip file with a reason where appropriate.
-- HN has no draft; Reddit and Product Hunt contain talking points only.
+- HN has no draft; Reddit, Product Hunt, Lemmy and newsletter contain talking points only.
 - Respect destination limits and link order; report omissions and uncertainties.

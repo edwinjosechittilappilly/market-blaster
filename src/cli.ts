@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { createInterface, type Interface } from "node:readline/promises";
 import { run as auth } from "./commands/auth.ts";
+import { keychainGet } from "./keychain.ts";
 import { run as approve } from "./commands/approve.ts";
 import { run as brief } from "./commands/brief.ts";
 import { run as check } from "./commands/check.ts";
@@ -65,8 +66,10 @@ function runProgram(
     },
     (error, stdout, stderr) => {
       if (!error) return resolve(stdout);
-      const reason = error.killed && opts.timeoutMs ? `timed out after ${opts.timeoutMs / 1000}s` : error.message;
-      reject(new Error(`${cmd}: ${stderr.trim().slice(0, 500) || reason}`));
+      // error.message repeats the full argv (possibly a whole prompt), so build the reason from the exit status only.
+      const reason = error.killed && opts.timeoutMs ? `timed out after ${opts.timeoutMs / 1000}s` : `exited with ${error.code ?? error.signal}`;
+      const tail = stderr.trim().split("\n").slice(-20).join("\n");
+      reject(new Error(`${cmd} ${reason}${tail ? `:\n${tail}` : ""}`));
     },
   );
   if (opts.input !== undefined) child.stdin?.end(opts.input);
@@ -95,6 +98,7 @@ export function realIO(): IO {
     },
     fetch: globalThis.fetch,
     run: runProgram,
+    keychain: process.platform === "darwin" ? (key) => keychainGet(key) : undefined,
   };
 }
 

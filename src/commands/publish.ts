@@ -17,7 +17,7 @@ export const run: Command = async (args, io) => {
   const config = loadConfig(io.cwd);
   const only = values.only?.split(",") as DestinationId[] | undefined;
   if (only?.some((id) => !isDestinationId(id) || !config.destinations.includes(id))) throw new UserError("--only contains an unknown or disabled destination");
-  const env = loadEnv(config.root, io.env);
+  const env = loadEnv(config.root, io.env, io.keychain);
   if (values.assist) return assistCampaign({ config, campaign: campaignDir(config, positionals[0]), env, io, adapters: ADAPTERS, only });
   return publishCampaign({ config, campaign: campaignDir(config, positionals[0]), env: await withGithubToken(env, io.run), io, adapters: ADAPTERS, yes: values.yes, stage: values.stage, force: values.force, open: values.open, only });
 };

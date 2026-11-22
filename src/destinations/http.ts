@@ -8,10 +8,10 @@ export function redactAdapter(text: string, ctx: Ctx, id: DestinationId): string
 }
 
 export async function requestJson<T>(ctx: Ctx, id: DestinationId, url: string, init: RequestInit = {}): Promise<T> {
-  const response = await ctx.fetch(url, { ...init, redirect: "error", signal: AbortSignal.timeout(ctx.timeoutMs) });
-  if (!response.ok) {
+  const response = await ctx.fetch(url, { ...init, redirect: "manual", signal: AbortSignal.timeout(ctx.timeoutMs) });
+  if (!response.ok || response.type === "opaqueredirect") {
     const text = redactAdapter((await response.text()).slice(0, 200), ctx, id);
-    const hint = id === "hashnode" && response.status >= 300 && response.status < 400 ? " (Hashnode GraphQL API moved to a paid offering)" : "";
+    const hint = id === "hashnode" && (response.type === "opaqueredirect" || response.status >= 300 && response.status < 400) ? " (Hashnode GraphQL API moved to a paid offering)" : "";
     const error = new HttpError(response.status, `${id} ${response.status}: ${text}${hint}`);
     const retryAfter = response.headers.get("retry-after");
     if (retryAfter) Object.assign(error, { retryAfter });

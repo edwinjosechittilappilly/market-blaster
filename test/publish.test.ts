@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { loadConfig } from "../src/config.ts";
 import { ADAPTERS } from "../src/destinations/index.ts";
 import { publishCampaign } from "../src/publisher.ts";
-import { loadState } from "../src/state.ts";
+import { approvalHash, loadState, withStateLock } from "../src/state.ts";
 import { run as approve } from "../src/commands/approve.ts";
 import { run as mark } from "../src/commands/mark.ts";
 import { run as status } from "../src/commands/status.ts";
@@ -150,7 +150,7 @@ test("concurrent publish is blocked by state lock", async () => {
   const net = mockFetch(async c => { if (c.method === "POST") { started.resolve(); await gate.promise; } return okDev(); });
   const io = fakeIO({ cwd: s.root, fetch: net.fetch }); const opts = { ...s, io, env, adapters: ADAPTERS, yes: true };
   const first = publishCampaign(opts); await started.promise;
-  assert.equal(await publishCampaign(opts), 1); assert.match(io.text(), /locked/);
+  await assert.rejects(publishCampaign(opts), { name: "LockError" });
   gate.resolve(); assert.equal(await first, 0);
 });
 
@@ -183,4 +183,39 @@ test("gateway failure is unknown and cannot be retried without mark", async () =
   const opts = { ...s, io, env, adapters: ADAPTERS, yes: true };
   assert.equal(await publishCampaign(opts), 1); assert.equal(loadState(s.campaign).devto?.status, "unknown");
   assert.equal(await publishCampaign(opts), 1); assert.equal(net.calls.filter(c => c.method === "POST").length, 1);
+});
+
+test("approval includes discussion settings and invalid configuration is rejected", () => {
+  const s = setup(["github-discussion"], "githubDiscussion:\n  repo: owner/repo\n  category: General\n");
+  const draft = { destination: "github-discussion" as const, title: "T", body: "B", evidence: [], path: "" };
+  const old = approvalHash(draft, s.config);
+  s.config.githubDiscussion.category = "News";
+  assert.notEqual(approvalHash(draft, s.config), old);
+  assert.throws(() => setup(["newsletter"]), /newsletter.targets/);
+  assert.throws(() => setup(["lemmy"], "lemmy:\n  instance: https://example.com\n"), /bare hostname/);
+  assert.throws(() => setup(["github-discussion"]), /githubDiscussion/);
+});
+
+test("empty and invalid lock files are stale", async () => {
+  const s = setup(["devto"]);
+  for (const pid of ["", "invalid"]) {
+    writeFileSync(join(s.campaign, "state.json.lock"), pid);
+    assert.equal(await withStateLock(s.campaign, async () => 42), 42);
+  }
+});
+
+test("newsletter prints each distinct target", async () => {
+  const s = setup(["newsletter"], "newsletter:\n  targets: [console-dev, javascript-weekly, golang-weekly]\n");
+  await approveAll(s.root);
+  const io = fakeIO({ cwd: s.root });
+  assert.equal(await publishCampaign({ ...s, io, env, adapters: ADAPTERS, yes: true }), 0);
+  assert.match(io.text(), /console\.dev/);
+  assert.equal((io.text().match(/https:\/\/cooperpress\.com\/submit\//g) ?? []).length, 1);
+});
+
+test("DEV invalid tags are reported rather than thrown in dry run", async () => {
+  const s = setup(["devto"], "", { devto: "---\ndestination: devto\ntitle: Test\ntags: [Bad-tag]\nevidence: [E1]\n---\nGrounded evidence\n" });
+  const io = fakeIO({ cwd: s.root });
+  assert.equal(await publishCampaign({ ...s, io, env, adapters: ADAPTERS }), 1);
+  assert.match(io.text(), /devto: error:.*tags/i);
 });

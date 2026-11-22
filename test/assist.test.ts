@@ -18,7 +18,7 @@ function project() {
   });
   const campaign = join(cwd, "campaigns/demo");
   const drafts = loadDrafts(campaign);
-  saveState(campaign, { devto: { status: "published", url: "https://dev.to/demo/post" }, threads: { approvedHash: approvalHash(drafts.get("threads")!, loadConfig(cwd)) } });
+  saveState(campaign, { devto: { status: "published", url: "https://dev.to/demo/post", title: "Show HN: Demo" }, reddit: { approvedHash: approvalHash(drafts.get("reddit")!, loadConfig(cwd)) }, threads: { approvedHash: approvalHash(drafts.get("threads")!, loadConfig(cwd)) } });
   return { cwd, campaign };
 }
 
@@ -60,7 +60,7 @@ test("stop leaves current handoff and does not visit later destinations", async 
   const io = fakeIO({ cwd, isTTY: true, answers: ["s"], run: async () => "" });
   assert.equal(await main(["publish", "demo", "--assist", "--only", "hn,reddit"], io), 0);
   const state = JSON.parse(readFileSync(join(campaign, "state.json"), "utf8"));
-  assert.equal(state.hn.status, "handoff"); assert.equal(state.reddit, undefined);
+  assert.equal(state.hn.status, "handoff"); assert.equal(state.reddit.status, undefined);
 });
 
 test("launch records and lists a project listing", async () => {

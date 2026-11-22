@@ -13,7 +13,15 @@ async function graphql<T>(ctx: Ctx, query: string, variables?: object): Promise<
     method: "POST", headers: { authorization: `Bearer ${ctx.env.GITHUB_TOKEN ?? ""}`, "content-type": "application/json" },
     body: JSON.stringify({ query, variables }),
   });
-  if (result.errors?.length) throw new HttpError(422, `github-discussion 422: ${redactAdapter(JSON.stringify(result.errors).slice(0, 200), ctx, "github-discussion")}`);
+  if (result.errors?.length && !(query === CREATE && (result.data as { createDiscussion?: unknown } | undefined)?.createDiscussion) && !(query === UPDATE && (result.data as { updateDiscussion?: unknown } | undefined)?.updateDiscussion)) {
+    const message = redactAdapter(JSON.stringify(result.errors).slice(0, 200), ctx, "github-discussion");
+    if (query === CREATE || query === UPDATE) {
+      const error = new Error(`github-discussion: ${message}`);
+      error.name = "UncertainResponseError";
+      throw error;
+    }
+    throw new HttpError(422, `github-discussion 422: ${message}`);
+  }
   return result.data;
 }
 
@@ -22,19 +30,23 @@ function body(post: ResolvedPost): string {
 }
 
 type Discussion = { id: string; url: string };
+async function lookup(ctx: Ctx) {
+  const { repo, category } = ctx.config.githubDiscussion;
+  const match = repo?.match(/^([^/]+)\/([^/]+)$/);
+  if (!match || !category) throw new UserError("github-discussion requires githubDiscussion.repo (owner/name) and category");
+  const data = await graphql<{ repository: { id: string; discussionCategories: { nodes: { id: string; name: string }[] } } | null }>(ctx, LOOKUP, { owner: match[1], name: match[2] });
+  const repository = data.repository;
+  const selected = repository?.discussionCategories.nodes.find((item) => item?.name === category);
+  if (!repository || !selected) throw new UserError(`github-discussion: repository or category not found: ${repo} / ${category}`);
+  return { repository, selected };
+}
 export const githubDiscussion: Destination = {
   id: "github-discussion", kind: "article", env: META["github-discussion"].env,
   limit: (text, ctx) => measureBody("github-discussion", text, ctx.config),
   payload: (post) => ({ query: CREATE, variables: { input: { title: post.title, body: body(post) } } }),
-  async verify(ctx) { await graphql(ctx, "query { viewer { login } }"); },
+  async verify(ctx) { await lookup(ctx); },
   async create(post, ctx) {
-    const { repo, category } = ctx.config.githubDiscussion;
-    const match = repo?.match(/^([^/]+)\/([^/]+)$/);
-    if (!match || !category) throw new UserError("github-discussion requires githubDiscussion.repo (owner/name) and category");
-    const data = await graphql<{ repository: { id: string; discussionCategories: { nodes: { id: string; name: string }[] } } | null }>(ctx, LOOKUP, { owner: match[1], name: match[2] });
-    const repository = data.repository;
-    const selected = repository?.discussionCategories.nodes.find((item) => item?.name === category);
-    if (!repository || !selected) throw new UserError(`github-discussion: repository or category not found: ${repo} / ${category}`);
+    const { repository, selected } = await lookup(ctx);
     const result = await graphql<{ createDiscussion: { discussion: Discussion } }>(ctx, CREATE, { input: { repositoryId: repository.id, categoryId: selected.id, title: post.title, body: body(post) } });
     return result.createDiscussion.discussion;
   },

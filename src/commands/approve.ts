@@ -14,8 +14,7 @@ export const run: Command = async (args, io) => {
   const campaign = campaignDir(config, positionals[0]);
   const only = values.only?.split(",") as DestinationId[] | undefined;
   if (only?.some((id) => !isDestinationId(id) || !config.destinations.includes(id))) throw new UserError("--only contains an unknown or disabled destination");
-  try {
-    return await withStateLock(campaign, async () => {
+  return withStateLock(campaign, async () => {
   const checked = checkCampaign(config, campaign, { only });
   for (const finding of checked.findings) io.out(`${finding.destination}: ${finding.level}: ${finding.message}`);
   if (checked.findings.some((finding) => finding.level === "error")) return 1;
@@ -31,8 +30,4 @@ export const run: Command = async (args, io) => {
   }
   return 0;
     });
-  } catch (err) {
-    if ((err as Error).message !== "campaign state is locked by another process") throw err;
-    io.err((err as Error).message); return 1;
-  }
 };

@@ -70,6 +70,15 @@ export function validateConfig(raw: unknown, root: string): Config {
   if (!Array.isArray(targets) || targets.some((target) => typeof target !== "string" || !allowedTargets.includes(target))) {
     throw new UserError(`${CONFIG_FILE}: newsletter.targets contains an unknown target`);
   }
+  if (destinations.includes("newsletter") && targets.length === 0) throw new UserError(`${CONFIG_FILE}: newsletter.targets must list at least one target`);
+  const instance = obj(data.lemmy).instance;
+  if (instance !== undefined && (typeof instance !== "string" || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i.test(instance))) {
+    throw new UserError(`${CONFIG_FILE}: lemmy.instance must be a bare hostname`);
+  }
+  const discussion = obj(data.githubDiscussion);
+  if (destinations.includes("github-discussion") && (typeof discussion.repo !== "string" || !/^[^/]+\/[^/]+$/.test(discussion.repo) || typeof discussion.category !== "string" || !discussion.category.trim())) {
+    throw new UserError(`${CONFIG_FILE}: githubDiscussion.repo (owner/name) and category are required`);
+  }
   if (nostr.relays !== undefined && (!Array.isArray(nostr.relays) || nostr.relays.some((relay) => typeof relay !== "string" || !/^wss:\/\//.test(relay)))) {
     throw new UserError(`${CONFIG_FILE}: nostr.relays must be a list of wss URLs`);
   }
@@ -96,6 +105,7 @@ export function validateConfig(raw: unknown, root: string): Config {
     linkedin: obj(data.linkedin),
     x: obj(data.x),
     reddit: obj(data.reddit),
+    hn: obj(data.hn),
     substack: obj(data.substack),
   };
 }

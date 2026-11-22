@@ -20,6 +20,8 @@ export interface IO {
     args: string[],
     opts?: { cwd?: string; env?: Env; input?: string; timeoutMs?: number },
   ): Promise<string>;
+  /** Reads a credential from the macOS Keychain; undefined in tests so no test can touch the real Keychain. */
+  keychain?: (key: string) => string | undefined;
 }
 
 export type Command = (args: string[], io: IO) => Promise<number>;

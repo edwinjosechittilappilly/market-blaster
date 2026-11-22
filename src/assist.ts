@@ -2,11 +2,10 @@ import { checkCampaign } from "./check.ts";
 import { newsletterTargets } from "./destinations/handoffs.ts";
 import { META, publishOrder } from "./destinations/meta.ts";
 import { modeOf } from "./destinations/mode.ts";
-import { loadDrafts } from "./drafts.ts";
 import type { IO } from "./io.ts";
 import { isDestinationId, linksIn } from "./links.ts";
 import { resolved } from "./publisher.ts";
-import { approvalHash, loadState, updateState, withStateLock } from "./state.ts";
+import { approvalHash, loadState, needsApproval, updateState, withStateLock } from "./state.ts";
 import type { Config, Ctx, Destination, DestinationId, Draft, Env } from "./types.ts";
 
 const hosts: Record<string, string[]> = {
@@ -19,8 +18,7 @@ const matches = (host: string, domain: string) => host === domain || host.endsWi
 export async function assistCampaign(opts: { config: Config; campaign: string; env: Env; io: IO; adapters: Record<DestinationId, Destination>; only?: DestinationId[] }): Promise<number> {
   const { config, campaign, env, io, adapters } = opts;
   if (!io.isTTY) { io.err("--assist requires an interactive terminal"); return 1; }
-  try {
-    return await withStateLock(campaign, async () => {
+  return withStateLock(campaign, async () => {
       const order = publishOrder(config.destinations.filter((id) => (!opts.only || opts.only.includes(id)) && modeOf(id, config, env).mode === "handoff"), config.canonicalHome);
       const state = loadState(campaign);
       const selected = order.filter((id) => state[id]?.status !== "published");
@@ -28,15 +26,15 @@ export async function assistCampaign(opts: { config: Config; campaign: string; e
       for (const finding of checked.findings) io.out(`${finding.destination}: ${finding.level}: ${finding.message}`);
       if (checked.findings.some((finding) => finding.level === "error")) return 1;
       const home = config.canonicalHome;
-      const homeDraft = home && isDestinationId(home) ? loadDrafts(campaign).get(home) : undefined;
       const ctx: Ctx = { config, env, fetch: io.fetch, timeoutMs: 30_000, run: io.run };
       let failed = false;
       for (const id of selected) {
-        const draft: Draft | undefined = id === "hn" ? { destination: "hn", title: homeDraft?.title, evidence: [], body: "", path: "" } : checked.drafts.get(id);
+        const draft: Draft | undefined = id === "hn" ? { destination: "hn", title: home && isDestinationId(home) ? state[home]?.title : config.hn?.title, evidence: [], body: "", path: "" } : checked.drafts.get(id);
         if (!draft || draft.skip) continue;
-        if (META[id].ai === "draft" && state[id]?.approvedHash !== approvalHash(draft, config)) {
+        if (needsApproval(id) && state[id]?.approvedHash !== approvalHash(draft, config)) {
           io.out(`${id}: refused: draft is not approved or has changed`); failed = true; continue;
         }
+        if (id === "hn" && !draft.title) { io.out("hn: skipped: published home title unavailable; set hn.title for an external canonical home"); failed = true; continue; }
         if (state[id]?.status === "unknown" || state[id]?.status === "pending" || state[id]?.lastAttempt?.status === "unknown") {
           io.out(`${id}: refused: unknown outcome; resolve with mark`); failed = true; continue;
         }
@@ -84,8 +82,4 @@ export async function assistCampaign(opts: { config: Config; campaign: string; e
       }
       return failed ? 1 : 0;
     });
-  } catch (err) {
-    if ((err as Error).message !== "campaign state is locked by another process") throw err;
-    io.err((err as Error).message); return 1;
-  }
 }

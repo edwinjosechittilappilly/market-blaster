@@ -124,9 +124,14 @@ Browser sessions for the manual destinations stay in your normal browser. Market
    - A draft can declare `skip: <reason>` (for example, Gist without a runnable example).
 4. `mblast publish --assist`: walks the handoffs one at a time. For each it opens the compose URL in the default
    browser, copies the text (never for HN), waits for you, and asks for the permalink to `mark`.
-5. New destinations: `github-discussion` (gh GraphQL `createDiscussion`, Announcements category) and `discord`
-   (webhook, optional).
+5. New destinations: `github-discussion` (gh GraphQL `createDiscussion`, Announcements category), plus `nostr`,
+   `lemmy` and `newsletter` from the [free-destinations research](../research/free-destinations.md).
+   **Deferred:** `discord`. You don't run a server yet. Crosspost supports webhooks, so adding it later is one
+   adapter.
 6. Rework the skill with the reach practices above and the AI policies.
+
+`mblast init` writes `linkedin.api: false` because the API needs the one-time app setup. Set it to `true` in your
+project config once `mblast auth linkedin` has succeeded.
 
 ## Your one-time local setup (after approval, about 45 minutes)
 

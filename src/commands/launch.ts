@@ -21,8 +21,7 @@ export const run: Command = async (args, io) => {
   const config = loadConfig(io.cwd);
   const dir = resolve(config.root, config.campaignsDir);
   const file = resolve(dir, "_launch.json");
-  try {
-    return await withStateLock(dir, async () => {
+  return withStateLock(dir, async () => {
       const state: LaunchState = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) as LaunchState : {};
       if (values.mark && values.url) {
         const key = values.mark.toLowerCase().replace(/[\s_-]+/g, "");
@@ -39,8 +38,4 @@ export const run: Command = async (args, io) => {
       }
       return 0;
     });
-  } catch (err) {
-    if ((err as Error).message !== "campaign state is locked by another process") throw err;
-    io.err((err as Error).message); return 1;
-  }
 };

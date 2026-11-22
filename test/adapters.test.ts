@@ -4,7 +4,7 @@ import { loadConfig } from "../src/config.ts";
 import { hashnode } from "../src/destinations/hashnode.ts";
 import { bluesky } from "../src/destinations/bluesky.ts";
 import { mastodon } from "../src/destinations/mastodon.ts";
-import { x, linkedin } from "../src/destinations/crosspost.ts";
+import { x, linkedin, nostr } from "../src/destinations/crosspost.ts";
 import { devto } from "../src/destinations/devto.ts";
 import { gist } from "../src/destinations/gist.ts";
 import { hn, reddit } from "../src/destinations/handoffs.ts";
@@ -72,7 +72,7 @@ test("DEV records unpublished creates and never unpublishes a live update", asyn
 
 test("HTTP errors are scoped, redirects rejected and bad success bodies uncertain", async () => {
   const ctx = context((async (_url, init) => {
-    assert.equal(init?.redirect, "error");
+    assert.equal(init?.redirect, "manual");
     return new Response("secret ordinary", { status: 301 });
   }) as typeof fetch);
   ctx.env.LANG = "ordinary";
@@ -99,6 +99,13 @@ test("Crosspost timeout and response mapping", async () => {
   await assert.rejects(x.create!(post, ctx, { stage: false }), { name: "TimeoutError" });
   ctx.crosspost = () => ({ async post() { throw Object.assign(new Error("rate limited"), { code: 429 }); }, getUrlFromResponse: () => "" });
   await assert.rejects(linkedin.create!(post, ctx, { stage: false }), { name: "HttpError", status: 429 });
+  ctx.crosspost = () => ({ async post() { throw new Error("429 Failed rate limit"); } });
+  await assert.rejects(linkedin.create!(post, ctx, { stage: false }), { name: "HttpError", status: 429 });
+  ctx.crosspost = () => ({ async post() { return { id: "note1abc" }; }, getUrlFromResponse: () => "nostr:note1abc" });
+  assert.equal((await nostr.create!(post, ctx, { stage: false })).url, "https://njump.me/note1abc");
+  ctx.crosspost = () => ({ async post() { return {}; }, getUrlFromResponse: () => { throw new Error("missing id"); } });
+  await assert.rejects(x.create!(post, ctx, { stage: false }), { name: "UncertainResponseError" });
+  assert.equal(linkedin.handoff!({ ...post, body: "no link" }, ctx).url, "https://www.linkedin.com/feed/?shareActive=true");
 });
 
 test("Gist uses same filename on update; handoffs use canonical", async () => {
@@ -113,6 +120,7 @@ test("Gist uses same filename on update; handoffs use canonical", async () => {
   assert.equal(hnUrl.searchParams.get("t"), post.title);
   const redditUrl = new URL(reddit.handoff!(post, ctx).url!);
   assert.equal(redditUrl.searchParams.get("url"), post.canonical);
+  assert.equal(redditUrl.searchParams.has("title"), false);
   assert.equal(reddit.handoff!(post, ctx).prefills, "link");
 });
 
@@ -133,4 +141,11 @@ test("Hashnode draft and post mutations use their expected inputs", async () => 
   assert.equal(inputs[1].draftId, "d");
   assert.deepEqual(inputs[2], { draftId: "d" });
   assert.equal(inputs[3].id, "p");
+});
+
+test("Mastodon falls back to v1 instance on older servers", async () => {
+  const net = mockFetch((call) => call.url.endsWith("/api/v2/instance") ? [404, {}] : call.url.endsWith("/api/v1/instance") ? [200, { max_toot_chars: 777 }] : [200, {}]);
+  const ctx = context(net.fetch);
+  await mastodon.verify!(ctx);
+  assert.equal(ctx.config.mastodon.maxChars, 777);
 });

@@ -57,6 +57,8 @@ export interface Config {
   x: { api?: boolean };
   reddit: { subreddit?: string };
   substack: { url?: string };
+  /** `title`: HN submission title when `canonicalHome` is a URL (no draft title to reuse). */
+  hn: { title?: string };
 }
 
 export interface Draft {
@@ -95,6 +97,8 @@ export interface DestinationState {
   error?: string;
   /** Outcome of the latest update attempt on an already-published entry; the entry itself stays `published`. */
   lastAttempt?: { status: "unknown" | "failed"; error: string };
+  /** Title as published, recorded for the canonical home so HN submits the title readers actually see. */
+  title?: string;
 }
 
 export type CampaignState = Partial<Record<DestinationId, DestinationState>>;

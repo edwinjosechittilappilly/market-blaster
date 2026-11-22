@@ -117,7 +117,12 @@ This runs three commands in a row:
    the README, docs, examples and tests (up to 400 lines), the PR body and the CHANGELOG section. Each section has an
    anchor such as `[E3]`.
 2. **`mblast draft`** runs your agent with the `market-blaster` skill. The agent writes one file per destination in
-   `campaigns/search-filters/drafts/`.
+   `campaigns/search-filters/drafts/`. Its temporary workspace and filtered environment are not a security sandbox:
+   the agent runs as your user and could read your Keychain or alter approvals. Configure `agent.command` to use a
+   sandbox where your harness supports one; for example, `claude --restricted` confines file tools and removes
+   command-running tools (see `claude --help`). Permission modes such as `--permission-mode dontAsk` are not a
+   substitute for an OS sandbox. Keychain items request access rather than automatically trusting their creator,
+   but a same-user process may still obtain access if permission is granted.
 3. **`mblast check`** validates the drafts.
 
 You can also run them one at a time. Add context the commits don't show to the `Notes from the author` section of

@@ -21,13 +21,23 @@ async function create(id: "x" | "linkedin" | "nostr", text: string, ctx: Ctx) {
   const timer = setTimeout(() => reject(new DOMException("Crosspost timed out", "TimeoutError")), ctx.timeoutMs);
   try {
     const response = await Promise.race([client.post(text, { signal: AbortSignal.timeout(ctx.timeoutMs) }), timeout]);
-    const result = response as { data?: { id?: string }; id?: string };
-    const postId = String(result.data?.id ?? result.id);
-    const url = client.getUrlFromResponse?.(response as never) || (id === "nostr" ? `https://njump.me/${postId}` : "");
-    return { id: postId, url };
+    try {
+      const result = response as { data?: { id?: string }; id?: string };
+      const postId = result.data?.id ?? result.id;
+      if (!postId) throw new Error("response has no post id");
+      const note = id === "nostr" ? client.getUrlFromResponse?.(response as never)?.replace(/^nostr:/, "") : undefined;
+      const url = id === "nostr" ? `https://njump.me/${note || postId}` : client.getUrlFromResponse?.(response as never) || "";
+      return { id: String(postId), url };
+    } catch (cause) {
+      const error = new Error(`${id}: could not interpret successful response`, { cause });
+      error.name = "UncertainResponseError";
+      throw error;
+    }
   } catch (error) {
     const e = error as { code?: unknown; requestError?: unknown; message?: string };
     if (typeof e.code === "number" && e.code >= 100 && e.code <= 599) throw new HttpError(e.code, `${id} ${e.code}: ${redactAdapter(e.message ?? "", ctx, id)}`);
+    const status = id === "linkedin" && e.message?.match(/^(\d{3}) /);
+    if (status) throw new HttpError(Number(status[1]), `${id} ${redactAdapter(e.message ?? "", ctx, id)}`);
     if (e.requestError) throw e.requestError;
     throw error;
   } finally {
@@ -53,7 +63,7 @@ export const linkedin: Destination = {
   create: (post, ctx) => create("linkedin", post.body, ctx),
   handoff: (post) => {
     const url = post.body.match(URL_RE)?.[0];
-    return url ? { url: linkedinShare(url), prefills: "link" } : { prefills: "none" };
+    return url ? { url: linkedinShare(url), prefills: "link" } : { url: "https://www.linkedin.com/feed/?shareActive=true", prefills: "none" };
   },
   async verify(ctx) {
     await requestJson(ctx, "linkedin", "https://api.linkedin.com/v2/userinfo", { headers: { authorization: `Bearer ${ctx.env.LINKEDIN_ACCESS_TOKEN ?? ""}` } });

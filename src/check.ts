@@ -23,6 +23,10 @@ export function checkCampaign(config: Config, campaign: string, opts: { only?: D
     const draft = drafts.get(destination);
     if (!draft) { add("error", "missing draft"); continue; }
     if (draft.skip) continue;
+    if (destination === "devto") {
+      const tags = draft.tags ?? config.devto.tags ?? [];
+      if (tags.length > 4 || tags.some((tag) => !/^[a-z0-9]+$/.test(tag))) add("error", "DEV tags must be lowercase letters/digits, max 4");
+    }
     if (META[destination].needsTitle && !draft.title?.trim()) add("error", "missing required title");
     if (!draft.evidence.length || draft.evidence.some((e) => !e.trim())) add("error", "missing required evidence");
     for (const anchor of draft.evidence) if (!anchors.has(anchor)) add("error", `unknown evidence anchor ${anchor}`);
@@ -33,14 +37,14 @@ export function checkCampaign(config: Config, campaign: string, opts: { only?: D
       else if (index >= order.indexOf(destination)) add("error", `link to ${link}: destination is not earlier in publish order`);
     }
     const body = META[destination].ai === "outline" ? null : measureBody(destination, resolveLinks(draft.body, {}, { worstCase: true }), config);
-    const title = draft.title ? measureTitle(destination, resolveLinks(draft.title, {}, { worstCase: true })) : null;
+    const title = META[destination].ai !== "outline" && draft.title ? measureTitle(destination, resolveLinks(draft.title, {}, { worstCase: true })) : null;
     for (const measure of [body, title]) if (measure && measure.length > measure.max) {
       const uncertainMastodon = destination === "mastodon" && measure === body && config.mastodon.maxChars == null && measure.length < 11000;
       add(uncertainMastodon ? "warning" : "error", uncertainMastodon
         ? `${measure.length} ${measure.unit} exceeds default 500; instance limit is verified at publish preflight`
         : `${measure.length} ${measure.unit} exceeds limit ${measure.max}`);
     }
-    const groundingText = text.replace(/https?:\/\/[^\s<>)\]]+|\{\{url:[^}]*\}\}/g, "").replace(/^[ \t]*\d[.)][ \t]+/gm, "");
+    const groundingText = [draft.title ?? "", draft.body, draft.canonical ?? ""].join("\n").replace(/https?:\/\/[^\s<>)\]]+|\{\{url:[^}]*\}\}/g, "").replace(/^[ \t]*\d[.)][ \t]+/gm, "");
     const tokens = groundingText.match(/`[^`\n]+`|(?<![\w.])v?\d+(?:,\d{3})*(?:\.\d+)*(?:[-+][\w.-]+)?(?:%|[a-zA-Zµ]+)?/g) ?? [];
     for (const token of new Set(tokens)) {
       const value = token.startsWith("`") ? token.slice(1, -1) : token;

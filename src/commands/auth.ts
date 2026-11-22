@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { dirname } from "node:path";
 import { findConfig } from "../config.ts";
 import { AUTH_ENV_VARS, loadEnvWithSources } from "../env.ts";
-import { keychainGet, keychainSet } from "../keychain.ts";
+import { keychainSet } from "../keychain.ts";
 import type { IO } from "../io.ts";
 import { UserError } from "../types.ts";
 
@@ -54,11 +54,11 @@ async function readSecret(piped: boolean): Promise<string> {
 export async function run(args: string[], io: IO, options: Options = {}): Promise<number> {
   const [action, ...rest] = args;
   const root = findConfig(io.cwd);
-  const get = options.get ?? ((key: string) => process.platform === "darwin" ? keychainGet(key) : undefined);
+  const get = options.get ?? io.keychain;
   const set = options.set ?? keychainSet;
   if (action === "set") {
     const key = rest[0];
-    if (!key || !AUTH_ENV_VARS.includes(key)) throw new UserError("Unknown credential key");
+    if (!key || !AUTH_ENV_VARS.includes(key)) throw new UserError(`Unknown credential key; known: ${AUTH_ENV_VARS.join(", ")}`);
     if (rest.length > 2 || (rest[1] && rest[1] !== "--stdin")) throw new UserError("Usage: mblast auth set <KEY> [--stdin]");
     const value = await (options.input ?? readSecret)(rest[1] === "--stdin");
     if (!value) throw new UserError("Credential cannot be empty");
@@ -95,10 +95,10 @@ export async function run(args: string[], io: IO, options: Options = {}): Promis
       timer = setTimeout(() => reject(new UserError("LinkedIn authorization timed out")), 300_000);
       server.listen(8723, "localhost", () => {
         io.out(`Register redirect URI ${REDIRECT} in your LinkedIn app.`);
+        io.out(url);
         const platform = options.platform ?? process.platform;
         const opener = platform === "darwin" ? "open" : platform === "linux" ? "xdg-open" : undefined;
-        if (!opener) { reject(new UserError("Cannot open browser on this platform")); return; }
-        void io.run(opener, [url]).catch(() => reject(new UserError("Could not open browser for LinkedIn authorization")));
+        if (opener) void io.run(opener, [url]).catch(() => io.err("Could not open browser; use the authorization URL above"));
       });
     });
     let response: Response;
@@ -116,6 +116,9 @@ export async function run(args: string[], io: IO, options: Options = {}): Promis
     const now = (options.now ?? (() => new Date()))();
     try { set("LINKEDIN_ACCESS_TOKEN", data.access_token); set("LINKEDIN_TOKEN_ISSUED", now.toISOString()); }
     catch { throw new UserError("Could not save LinkedIn credentials in Keychain; on non-macOS use .env"); }
+    for (const key of ["LINKEDIN_ACCESS_TOKEN", "LINKEDIN_TOKEN_ISSUED"]) {
+      if (sources[key] && sources[key] !== "keychain") io.err(`${key} is overridden by ${sources[key]}; remove it there`);
+    }
     io.out(`LinkedIn token expires ${new Date(now.getTime() + data.expires_in * 1000).toISOString()}`);
     return 0;
   } finally {

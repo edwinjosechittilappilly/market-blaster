@@ -1,14 +1,14 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { checkCampaign } from "./check.ts";
 import { ALL_ENV_VARS, META, publishOrder } from "./destinations/meta.ts";
+import { newsletterTargets } from "./destinations/handoffs.ts";
 import { modeOf } from "./destinations/mode.ts";
-import { loadDrafts } from "./drafts.ts";
 import { redact } from "./env.ts";
 import type { IO } from "./io.ts";
 import { measureBody } from "./limits.ts";
 import { isDestinationId, linksIn, resolveLinks } from "./links.ts";
-import { approvalHash, loadState, updateState, withStateLock } from "./state.ts";
-import { HttpError, type CampaignState, type Config, type Ctx, type Destination, type DestinationId, type Draft, type Env, type ResolvedPost } from "./types.ts";
+import { approvalHash, loadState, needsApproval, updateState, withStateLock } from "./state.ts";
+import { HttpError, UserError, type CampaignState, type Config, type Ctx, type Destination, type DestinationId, type Draft, type Env, type ResolvedPost } from "./types.ts";
 
 interface PublishOptions {
   config: Config; campaign: string; env: Env; io: IO;
@@ -35,12 +35,8 @@ function connectionRefused(err: unknown): boolean {
   return e?.code === "ECONNREFUSED" || e?.cause?.code === "ECONNREFUSED";
 }
 function uncertain(err: unknown): boolean {
-  const e = err as { name?: string; code?: string; cause?: { code?: string }; status?: number };
-  const code = e?.code ?? e?.cause?.code ?? "";
-  return e?.name === "TimeoutError" || e?.name === "AbortError" || e?.name === "UncertainResponseError"
-    || code === "ETIMEDOUT" || code === "ECONNRESET" || code === "EPIPE" || code === "UND_ERR_SOCKET"
-    || (code.startsWith("UND_ERR_") && code.includes("TIMEOUT"))
-    || (err instanceof HttpError && [502, 503, 504, 522, 524].includes(err.status));
+  if (err instanceof UserError) return false;
+  return !(err instanceof HttpError && err.status >= 400 && err.status < 500 && err.status !== 429);
 }
 
 function retryDelay(err: unknown, attempt: number): number {
@@ -50,12 +46,7 @@ function retryDelay(err: unknown, attempt: number): number {
 }
 
 export async function publishCampaign(opts: PublishOptions): Promise<number> {
-  try {
-    return await withStateLock(opts.campaign, () => publishLocked(opts));
-  } catch (err) {
-    if ((err as Error).message !== "campaign state is locked by another process") throw err;
-    opts.io.err((err as Error).message); return 1;
-  }
+  return withStateLock(opts.campaign, () => publishLocked(opts));
 }
 
 async function publishLocked(opts: PublishOptions): Promise<number> {
@@ -68,8 +59,9 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
   const order = publishOrder(config.destinations.filter((id) => !opts.only || opts.only.includes(id)), config.canonicalHome);
   const state = loadState(campaign);
   const home = config.canonicalHome;
-  const homeDraft = isDestinationId(home ?? "") ? loadDrafts(campaign).get(home as DestinationId) : undefined;
-  const hnDraft: Draft = { destination: "hn", title: homeDraft?.title, evidence: [], body: "", path: "" };
+  // Published title from state once the home is live; before that (dry run, first run) the approved home draft's title.
+  const homeTitle = home && isDestinationId(home) ? (state[home]?.title ?? checked.drafts.get(home)?.title) : config.hn?.title;
+  const hnDraft: Draft = { destination: "hn", title: homeTitle, evidence: [], body: "", path: "" };
   const draftFor = (id: DestinationId) => id === "hn" ? hnDraft : checked.drafts.get(id)!;
   const eligible: DestinationId[] = [];
   let failed = false;
@@ -79,7 +71,7 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
     if (draft?.skip) { io.out(`${id}: skipped (${draft.skip})`); continue; }
     if (opts.stage && id !== "devto" && id !== "hashnode") { io.out(`${id}: skipped (not staged)`); continue; }
     if (opts.stage && entry?.status === "published") { io.out(`${id}: skipped (already published)`); continue; }
-    if (id !== "hn" && entry?.approvedHash !== approvalHash(draft, config)) { io.out(`${id}: refused: draft is not approved or has changed`); failed = true; continue; }
+    if (needsApproval(id) && entry?.approvedHash !== approvalHash(draft, config)) { io.out(`${id}: refused: draft is not approved or has changed`); failed = true; continue; }
     if (entry?.status === "unknown" || entry?.status === "pending" || entry?.lastAttempt?.status === "unknown") { io.out(`${id}: refused: unknown outcome; resolve with mark`); failed = true; continue; }
     if (entry?.status === "published" && (id === "hn" || entry.contentHash === approvalHash(draft, config))) { io.out(`${id}: published (skipped)`); continue; }
     const mode = modeOf(id, config, env);
@@ -94,8 +86,10 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
       const adapter = adapters[id];
       const mode = modeOf(id, config, env).mode;
       const cost = mode === "api" ? adapter.cost?.(post) : undefined;
-      const payload = mode === "handoff" ? adapter.handoff?.(post, ctx) : adapter.payload(post, ctx, { stage: !!opts.stage });
-      io.out(`${id}: ${mode}${cost === undefined ? "" : ` expected cost $${cost.toFixed(2)}`} text: ${post.body} payload: ${JSON.stringify(payload)}`);
+      try {
+        const payload = mode === "handoff" ? adapter.handoff?.(post, ctx) : adapter.payload(post, ctx, { stage: !!opts.stage });
+        io.out(`${id}: ${mode}${cost === undefined ? "" : ` expected cost $${cost.toFixed(2)}`} text: ${post.body} payload: ${JSON.stringify(payload)}`);
+      } catch (err) { io.out(`${id}: error: ${(err as Error).message}`); failed = true; }
     }
     return failed ? 1 : 0;
   }
@@ -104,7 +98,7 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
     if (modeOf(id, config, env).mode === "api") {
       try {
         if (adapters[id].verify) await adapters[id].verify!(ctx);
-        else io.out(`${id}: preflight: no read check available`);
+        else io.out(`${id}: preflight: verify unavailable (no read check available)`);
       } catch (err) { io.out(`${id}: preflight failed: ${redact(String((err as Error).message ?? err), env, ALL_ENV_VARS)}`); preflightFailed = true; }
     }
   }
@@ -116,6 +110,10 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
   if (preflightFailed) return 1;
   for (const id of eligible) {
     const draft = draftFor(id);
+    if (id === "hn") {
+      draft.title = home && isDestinationId(home) ? state[home]?.title : config.hn?.title;
+      if (!draft.title) { io.out("hn: skipped: published home title unavailable; set hn.title for an external canonical home"); failed = true; continue; }
+    }
     const entry = state[id];
     const adapter = adapters[id];
     const dependencies = [...linksIn(draft.title ?? ""), ...linksIn(draft.body), ...(usesCanonical(id) ? linksIn(draft.canonical ?? "") : [])];
@@ -130,6 +128,7 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
       try {
         if (!adapter.handoff) throw new Error("adapter has no handoff");
         const info = adapter.handoff(post, ctx);
+        if (id === "newsletter") for (const target of newsletterTargets(config)) io.out(`${target.name}: compose ${target.url}`);
         if (opts.open) {
           if (META[id].ai === "draft") {
             const command = process.platform === "darwin" ? ["pbcopy"] : process.platform === "win32" ? ["clip"] : ["xclip", "-selection", "clipboard"];
@@ -168,7 +167,7 @@ async function publishLocked(opts: PublishOptions): Promise<number> {
         }
       }
       const status = result.staged || stage ? "staged" : "published";
-      updateState(campaign, state, id, { status, id: result.id, url: result.url, contentHash: post.contentHash, error: undefined, lastAttempt: undefined });
+      updateState(campaign, state, id, { status, id: result.id, url: result.url, title: post.title, contentHash: post.contentHash, error: undefined, lastAttempt: undefined });
       io.out(`${id}: ${status} ${result.url}`);
     } catch (err) {
       const status = uncertain(err) ? "unknown" : "failed";

@@ -1,11 +1,18 @@
 import { createHash } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { UserError } from "./types.ts";
 import type { CampaignState, Config, DestinationId, DestinationState, Draft } from "./types.ts";
+import { META } from "./destinations/meta.ts";
 
 export function statePath(campaign: string): string {
   return join(campaign, "state.json");
 }
+export class LockError extends UserError {
+  constructor() { super("campaign state is locked by another process"); this.name = "LockError"; }
+}
+
+export const needsApproval = (id: DestinationId): boolean => META[id].ai !== "none";
 
 /** Serialize read-modify-write operations across processes, removing locks from dead processes. */
 export async function withStateLock<T>(campaign: string, fn: () => Promise<T>): Promise<T> {
@@ -21,12 +28,12 @@ export async function withStateLock<T>(campaign: string, fn: () => Promise<T>): 
       const pid = Number(readFileSync(lock, "utf8").trim());
       if (Number.isSafeInteger(pid) && pid > 0) {
         try { process.kill(pid, 0); } catch (e) { stale = (e as NodeJS.ErrnoException).code === "ESRCH"; }
-      }
+      } else stale = true;
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === "ENOENT") return withStateLock(campaign, fn);
       throw e;
     }
-    if (!stale) throw new Error("campaign state is locked by another process");
+    if (!stale) throw new LockError();
     try { unlinkSync(lock); } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
     return withStateLock(campaign, fn);
   }
@@ -76,7 +83,8 @@ export function contentHash(draft: Pick<Draft, "destination" | "title" | "canoni
 
 /** Includes all settings that can change the published payload. */
 export function approvalHash(draft: Draft, config: Config): string {
-  const settings = draft.destination in config ? config[draft.destination as keyof Config] : undefined;
+  const key = draft.destination === "github-discussion" ? "githubDiscussion" : draft.destination;
+  const settings = key in config ? config[key as keyof Config] : undefined;
   return createHash("sha256")
     .update(JSON.stringify([draft.destination, draft.title ?? "", draft.canonical ?? "", draft.tags ?? [], draft.body, draft.skip ?? "", config.canonicalHome ?? "", settings ?? null]))
     .digest("hex");

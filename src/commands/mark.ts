@@ -12,8 +12,7 @@ export const run: Command = async (args, io) => {
   const id = positionals[1];
   if (!isDestinationId(id) || !config.destinations.includes(id)) throw new UserError(`unknown or disabled destination ${id}`);
   const campaign = campaignDir(config, positionals[0]);
-  try {
-    return await withStateLock(campaign, async () => {
+  return withStateLock(campaign, async () => {
   const state = loadState(campaign);
   if (values["not-posted"]) {
     if (state[id]?.status !== "unknown" && state[id]?.status !== "pending" && state[id]?.lastAttempt?.status !== "unknown") throw new UserError(`${id} is not unknown or pending`);
@@ -31,8 +30,4 @@ export const run: Command = async (args, io) => {
   }
   return 0;
     });
-  } catch (err) {
-    if ((err as Error).message !== "campaign state is locked by another process") throw err;
-    io.err((err as Error).message); return 1;
-  }
 };

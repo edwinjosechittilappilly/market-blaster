@@ -2,12 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { checkCampaign } from "../src/check.ts";
 import { loadConfig } from "../src/config.ts";
 import { run as check } from "../src/commands/check.ts";
 import { run as draft } from "../src/commands/draft.ts";
+import { META } from "../src/destinations/meta.ts";
 import { DESTINATION_IDS } from "../src/types.ts";
 import { fakeIO, tempProject } from "./helpers.ts";
 
@@ -33,7 +34,7 @@ test("strict turns grounding warnings into failures", async () => {
 });
 
 test("draft runs agent with restricted environment and preserves existing drafts", async () => {
-  const script = `const fs = require('node:fs'); fs.writeFileSync('drafts/bluesky.md', ${JSON.stringify(bluesky("PLACEHOLDER"))}.replace('PLACEHOLDER', JSON.stringify({cwd:process.cwd(), files:fs.readdirSync('.'), env:process.env, prompt:process.argv.at(-1)}))); fs.writeFileSync('drafts/extra.md','extra'); fs.writeFileSync('extra.txt','extra');`;
+  const script = `const fs = require('node:fs'); fs.writeFileSync('drafts/bluesky.md', ${JSON.stringify(bluesky("PLACEHOLDER"))}.replace('PLACEHOLDER', JSON.stringify({cwd:process.cwd(), files:fs.readdirSync('.'), env:process.env, prompt:process.argv.at(-1), brand:fs.readFileSync('brand.yml','utf8')}))); fs.writeFileSync('drafts/extra.md','extra'); fs.writeFileSync('extra.txt','extra');`;
   const agentConfig = `brand:\n  name: Demo\ndestinations: [devto, bluesky]\ncanonicalHome: devto\nagent:\n  command: [node, "-e", ${JSON.stringify(script)}]\n`;
   const root = project({ "market-blaster.yml": agentConfig, ".env": "SECRET=secret", "campaigns/a/drafts/devto.md": devto("Keep me") });
   const exec = promisify(execFile);
@@ -43,6 +44,9 @@ test("draft runs agent with restricted environment and preserves existing drafts
   const content = readFileSync(join(root, "campaigns/a/drafts/bluesky.md"), "utf8").split("---\n")[2];
   const result = JSON.parse(content);
   assert.notEqual(result.cwd, root);
+  assert.equal(basename(result.env.TMPDIR), basename(result.cwd));
+  assert.match(result.brand, /aiPolicies:\n\s+devto: draft\n\s+bluesky: draft/);
+  for (const key of ["githubDiscussion", "lemmy", "newsletter", "nostr"]) assert.match(result.brand, new RegExp(`^${key}:`, "m"));
   assert.deepEqual(result.files.sort(), ["SKILL.md", "brand.yml", "brief.md", "drafts"]);
   assert.equal(result.env.DEV_API_KEY, undefined);
   assert.equal(result.env.SHELL, undefined);
@@ -66,6 +70,10 @@ test("draft requires a brief and skips an already complete campaign", async () =
 test("skill covers every destination", () => {
   const skill = readFileSync(new URL("../skills/market-blaster/reference/destinations.md", import.meta.url), "utf8");
   for (const id of DESTINATION_IDS) assert.match(skill, new RegExp(`^## ${id}$`, "m"));
+  const instructions = readFileSync(new URL("../skills/market-blaster/SKILL.md", import.meta.url), "utf8");
+  const outline = ["reddit", "producthunt", "lemmy", "newsletter"];
+  for (const id of DESTINATION_IDS) assert.equal(META[id].ai, id === "hn" ? "none" : outline.includes(id) ? "outline" : "draft", id);
+  assert.match(instructions, /Reddit, Product Hunt, Lemmy and newsletter: write only bullet talking points/);
 });
 
 test("skip and HN need no generated text", () => {
@@ -92,7 +100,29 @@ test("Mastodon default is a warning until instance preflight", () => {
   assert.ok(!findings.some((f) => f.level === "error"));
 });
 
-test("outline body is not checked for grounding or length", () => {
-  const root = project({ "market-blaster.yml": "brand: { name: Demo }\ndestinations: [reddit]\n", "campaigns/a/drafts/reddit.md": "---\ndestination: reddit\ntitle: Notes\nevidence: [E1]\n---\n10,000 users\n" });
-  assert.deepEqual(checkCampaign(loadConfig(root), join(root, "campaigns/a")).findings, []);
+test("outline grounding checks title and body but skips body length", () => {
+  const root = project({ "market-blaster.yml": "brand: { name: Demo }\ndestinations: [reddit]\n", "campaigns/a/drafts/reddit.md": "---\ndestination: reddit\ntitle: 20 notes\nevidence: [E1]\n---\n10,000 users\n" + "a".repeat(50000) });
+  const findings = checkCampaign(loadConfig(root), join(root, "campaigns/a")).findings;
+  assert.ok(findings.some((f) => f.level === "warning" && f.message.includes("10,000")));
+  assert.ok(findings.some((f) => f.level === "warning" && f.message.includes("20")));
+  assert.ok(!findings.some((f) => f.message.includes("exceeds limit")));
+});
+
+test("draft agent failure reports the last 20 lines", async () => {
+  const root = project();
+  const lines = Array.from({ length: 25 }, (_, i) => `line ${i + 1}`).join("\n");
+  await assert.rejects(draft(["a"], fakeIO({ cwd: root, run: async () => { throw new Error(lines); } })), (err: Error) => {
+    assert.doesNotMatch(err.message, /line 5\n/);
+    assert.match(err.message, /line 6\n/);
+    assert.match(err.message, /line 25/);
+    return true;
+  });
+});
+
+test("DEV tag rules are checked before publishing", () => {
+  const root = project({ "market-blaster.yml": "brand: { name: Demo }\ndestinations: [devto]\ndevto:\n  tags: [Bad]\n", "campaigns/a/drafts/devto.md": devto("Feature") });
+  const campaign = join(root, "campaigns/a");
+  assert.ok(checkCampaign(loadConfig(root), campaign).findings.some((f) => f.level === "error" && f.message.includes("DEV tags")));
+  const override = project({ "market-blaster.yml": "brand: { name: Demo }\ndestinations: [devto]\ndevto:\n  tags: [good]\n", "campaigns/a/drafts/devto.md": devto("Feature", 'title: Title\ntags: [one, two, three, four, five]\n') });
+  assert.ok(checkCampaign(loadConfig(override), join(override, "campaigns/a")).findings.some((f) => f.level === "error" && f.message.includes("DEV tags")));
 });
