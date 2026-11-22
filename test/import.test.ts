@@ -139,3 +139,42 @@ test("rejects invalid shared media metadata in v1 manifests", async () => {
   s.save();
   await assert.rejects(run([s.pkg], s.io), /invalid Studio manifest post/);
 });
+
+test("imports v1 tags and rejects invalid tag arrays", async () => {
+  const s = setup();
+  Object.assign(s.manifest.posts[0], { tags: ["Type Script", "two"] });
+  s.save();
+  await run([s.pkg], s.io);
+  assert.deepEqual(loadDrafts(s.campaign).get("bluesky")?.tags, ["Type Script", "two"]);
+  for (const tags of ["tag", [1], null]) {
+    Object.assign(s.manifest.posts[0], { tags });
+    s.save();
+    await assert.rejects(run([s.pkg], s.io), /invalid Studio manifest post/);
+  }
+});
+
+test("imports v2 manifest tags and accepts missing tags", async () => {
+  const s = setup();
+  const destination: { id: string; mode: string; aiPolicy: string; post: string; media: never[];
+    thread: null; review: null; tags?: unknown } = { id: "bluesky", mode: "api", aiPolicy: "draft",
+    post: "posts/bluesky.md", media: [], thread: null, review: null };
+  const manifest = { version: 2, kind: "blast-studio-campaign", slug: "demo", title: "Demo",
+    generatedAt: "2026-01-01T00:00:00Z", generator: { name: "Studio", version: "1" },
+    canonicalHome: null, sources: [], destinations: [destination], manual: [] };
+  const zip = join(s.root, "tags.zip");
+  const save = () => writeFileSync(zip, zipSync({ "campaign.json": strToU8(JSON.stringify(manifest)),
+    "brief.md": strToU8("brief"), "posts/bluesky.md": strToU8("---\ntags: [old]\n---\nHello\n") }));
+  Object.assign(destination, { tags: ["Type Script", "two"] });
+  save();
+  await run([zip], s.io);
+  assert.deepEqual(loadDrafts(s.campaign).get("bluesky")?.tags, ["Type Script", "two"]);
+  for (const tags of ["tag", [1], null]) {
+    Object.assign(destination, { tags });
+    save();
+    await assert.rejects(run([zip], s.io), /invalid campaign destination/);
+  }
+  delete destination.tags;
+  save();
+  await run([zip], s.io);
+  assert.deepEqual(loadDrafts(s.campaign).get("bluesky")?.tags, ["old"]);
+});

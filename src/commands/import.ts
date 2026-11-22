@@ -107,6 +107,7 @@ export const run: Command = async (args, io) => {
       }
       const front = { destination: post.destination, ...(post.title === undefined ? {} : { title: post.title }),
         evidence: post.evidence, media: media.map(({ source, captionSource, ...item }) => item),
+        ...(post.tags === undefined ? {} : { tags: post.tags }),
         ...(post.disclosure === undefined ? {} : { disclosure: post.disclosure }),
         studio: { reviewHash: post.review.reviewHash, verdict: post.review.verdict } };
       const path = draftPath(campaign, post.destination);
@@ -140,7 +141,8 @@ async function importCampaignZip(root: string, io: IO, slug: string | undefined,
       }
     }
     if (d.thread) packageFile(root, d.thread);
-    if (!d.post) return { id: d.id, text: `---\n${stringify({ destination: d.id, title: manifest.title })}---\n` };
+    if (!d.post) return { id: d.id, text: `---\n${stringify({ destination: d.id, title: manifest.title,
+      ...(d.tags === undefined ? {} : { tags: d.tags }) })}---\n` };
     const source = packageFile(root, d.post);
     const text = readFileSync(source, "utf8");
     const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
@@ -149,6 +151,7 @@ async function importCampaignZip(root: string, io: IO, slug: string | undefined,
     try { front = parse(match[1]); } catch (err) { throw new UserError(`${d.post}: invalid frontmatter: ${(err as Error).message}`); }
     if (!front || typeof front !== "object" || Array.isArray(front)) throw new UserError(`${d.post}: invalid frontmatter`);
     const output = `---\n${stringify({ ...front, destination: d.id, media: d.media,
+      ...(d.tags === undefined ? {} : { tags: d.tags }),
       ...(d.review ? { studio: { reviewHash: d.review.reviewHash, verdict: d.review.verdict } } : {}) })}---\n${match[2]}`;
     parseDraft(d.post, output);
     return { id: d.id, text: output };

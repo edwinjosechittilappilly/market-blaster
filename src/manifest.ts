@@ -6,7 +6,7 @@ import { UserError, type DestinationId } from "./types.ts";
 
 export interface StudioMedia { path: string; alt: string; kind: string; cover?: boolean; lang?: string; captions?: string }
 export interface StudioPost {
-  platform: string; destination: DestinationId; title?: string; body: string; evidence: string[];
+  platform: string; destination: DestinationId; title?: string; body: string; evidence: string[]; tags?: string[];
   disclosure?: { text?: string; media?: string; voice?: string }; media: StudioMedia[]; thread?: string[];
   review: { verdict: string; total: number | null; reviewHash: string };
 }
@@ -14,7 +14,7 @@ export interface StudioManifest { version: 1; slug: string; generatedAt: string;
 
 export interface CampaignDestination {
   id: DestinationId; mode: "api" | "handoff"; aiPolicy: string; post: string | null;
-  media: StudioMedia[]; thread: string | null;
+  media: StudioMedia[]; thread: string | null; tags?: string[];
   review: { verdict: string; total: number | null; reviewHash: string } | null;
 }
 export interface CampaignManifest {
@@ -68,6 +68,7 @@ export function loadManifest(root: string): StudioManifest {
       || !strings(post.evidence) || !Array.isArray(post.media)
       || post.media.some((m: unknown) => !validateMedia(m) || !m.path || !m.kind)
       || (post.thread !== undefined && !strings(post.thread))
+      || (post.tags !== undefined && !strings(post.tags))
       || (post.disclosure !== undefined && (!object(post.disclosure) || Object.entries(post.disclosure).some(([k, v]) =>
         !["text", "media", "voice"].includes(k) || typeof v !== "string")))
       || !object(post.review) || !["pass", "accepted", "revise", "blocked"].includes(String(post.review.verdict))
@@ -103,6 +104,7 @@ export function loadCampaignManifest(root: string): CampaignManifest {
       || (d.post !== null && (typeof d.post !== "string" || !d.post))
       || !Array.isArray(d.media) || d.media.some((m: unknown) => !media(m))
       || (d.thread !== null && (typeof d.thread !== "string" || !d.thread))
+      || (d.tags !== undefined && !strings(d.tags))
       || !review(d.review, true)) throw new UserError("invalid campaign destination");
     seen.add(d.id);
   }
