@@ -69,13 +69,22 @@ and dummy DEV and Bluesky credentials. The final command is a dry run, so it sen
 Market Blaster is its own code. Its only publishing dependency is [Crosspost](https://github.com/humanwhocodes/crosspost)
 (Apache-2.0), which handles X and LinkedIn signing. The tools below are alternatives we researched before building:
 
-| Tool | What it does | How Market Blaster differs |
-|---|---|---|
-| [Pipepost](https://github.com/MendleM/Pipepost) | MCP that cross-publishes an existing article | Starts from your code change, not a finished article; reviewable files instead of an MCP-only flow |
-| [Typefully](https://typefully.com/), [Buffer](https://buffer.com/), [Postiz](https://postiz.com/) | Social scheduling | No DEV, Gist or GitHub posting; no evidence-grounded drafts |
-| [Crosspost](https://github.com/humanwhocodes/crosspost) | Posting library and CLI | Used for X and LinkedIn; it has no drafting, approval or duplicate protection |
+| | Market Blaster | [Pipepost](https://github.com/MendleM/Pipepost) | [Typefully](https://typefully.com/) | [Buffer](https://buffer.com/) | [Postiz](https://postiz.com/) | [Crosspost](https://github.com/humanwhocodes/crosspost) |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| Starts from a code change (commits, diff, PR, changelog) | ✅ | — | — | — | — | — |
+| AI drafts per platform | ✅ grounded in evidence | ✅ from an article | — | — | — | — |
+| Flags claims that aren't in the evidence | ✅ | — | — | — | — | — |
+| Developer article platforms (DEV, Hashnode, Gist, GitHub) | ✅ | ◐ DEV, Hashnode | — | — | — | ◐ DEV |
+| Social (Bluesky, Mastodon, LinkedIn, X) | ✅ API or compose link | ✅ | ✅ | ✅ | ✅ | ✅ |
+| HN, Reddit, Product Hunt guidance | ✅ compose links, no AI text for HN | ◐ variants | — | — | ◐ Reddit | — |
+| Approval locked to the exact text | ✅ terminal, hash-checked | — | ◐ drafts in app | ◐ drafts in app | ◐ drafts in app | — |
+| No duplicate posts on rerun | ✅ | — | — | — | — | — |
+| Scheduling and analytics | — | — | ✅ | ✅ | ✅ | — |
+| Interface | CLI + agent skill | MCP | Web, API, MCP | Web, API | Web, API, CLI, MCP | CLI, library, MCP |
+| Cost | Free, MIT | MIT, credits for some features | Free and paid tiers | Free for 3 channels, then $6/channel/mo | Free self-hosted (AGPL) or paid | Free, Apache-2.0 |
 
-Details: [tool research](docs/research/existing-skills-and-tools.md).
+✅ supported · ◐ partial · — not offered or not documented in [our research](docs/research/existing-skills-and-tools.md)
+(snapshot 2026-11-21). Use a scheduler alongside Market Blaster if you need queues and analytics.
 
 ## Safety
 
