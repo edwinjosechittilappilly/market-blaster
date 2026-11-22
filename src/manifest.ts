@@ -20,7 +20,7 @@ export interface CampaignDestination {
 export interface CampaignManifest {
   version: 2; kind: "blast-studio-campaign"; slug: string; title: string; generatedAt: string;
   generator: { name: string; version: string }; canonicalHome: string | null;
-  sources: { anchor: string; title: string; status: string; url?: string | null }[];
+  sources: { anchor: string; title: string; status: string | null; url?: string | null }[];
   destinations: CampaignDestination[];
   manual: { platform: string; folder: string; review: { verdict: string; total: number | null } | null }[];
 }
@@ -94,7 +94,7 @@ export function loadCampaignManifest(root: string): CampaignManifest {
     || !object(value.generator) || typeof value.generator.name !== "string" || typeof value.generator.version !== "string"
     || (value.canonicalHome !== null && typeof value.canonicalHome !== "string")
     || !Array.isArray(value.sources) || value.sources.some((s: unknown) => !object(s) || typeof s.anchor !== "string"
-      || typeof s.title !== "string" || typeof s.status !== "string" || (s.url !== undefined && s.url !== null && typeof s.url !== "string"))
+      || typeof s.title !== "string" || (s.status !== null && typeof s.status !== "string") || (s.url !== undefined && s.url !== null && typeof s.url !== "string"))
     || !Array.isArray(value.destinations) || !Array.isArray(value.manual)) throw new UserError("invalid campaign manifest fields");
   const seen = new Set<string>();
   for (const d of value.destinations) {

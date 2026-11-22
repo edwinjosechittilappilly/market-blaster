@@ -6,7 +6,7 @@ import { strToU8, zipSync } from "fflate";
 import { extractCampaignZip } from "../src/campaign-zip.ts";
 import { run } from "../src/commands/import.ts";
 import { loadDrafts } from "../src/drafts.ts";
-import { reviewHash } from "../src/manifest.ts";
+import { loadCampaignManifest, reviewHash } from "../src/manifest.ts";
 import { fakeIO, tempProject } from "./helpers.ts";
 
 function fixture() {
@@ -27,6 +27,17 @@ function fixture() {
   writeFileSync(file, zip);
   return { root, file, io: fakeIO({ cwd: root }), campaign: join(root, "campaigns/demo") };
 }
+
+test("campaign manifest accepts null canonical home, source status and URL", () => {
+  const manifest = {
+    version: 2, kind: "blast-studio-campaign", slug: "demo", title: "Demo",
+    generatedAt: "2026-01-01T00:00:00Z", generator: { name: "studio", version: "1" },
+    canonicalHome: null, sources: [{ anchor: "E1", title: "Source", status: null, url: null }],
+    destinations: [], manual: [],
+  };
+  const root = tempProject({ "campaign.json": JSON.stringify(manifest) });
+  assert.deepEqual(loadCampaignManifest(root), manifest);
+});
 
 test("imports a Studio campaign and reports destinations and manual handoffs", async () => {
   const f = fixture();
