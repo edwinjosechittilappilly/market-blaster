@@ -4,6 +4,7 @@ site_url: https://edwinjosechittilappilly.github.io/market-blaster/
 repo_url: https://github.com/edwinjosechittilappilly/market-blaster
 repo_name: market-blaster
 edit_uri: edit/main/docs/
+copyright: Copyright &copy; 2026 Edwin Jose Chittilappilly · Apache-2.0
 
 theme:
   name: material

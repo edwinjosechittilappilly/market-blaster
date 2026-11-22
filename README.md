@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/edwinjosechittilappilly/market-blaster/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/edwinjosechittilappilly/market-blaster/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://edwinjosechittilappilly.github.io/market-blaster/"><img alt="Documentation" src="https://img.shields.io/badge/docs-online-087f8c"></a>
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
   <img alt="Works with omp, Claude Code and Codex" src="https://img.shields.io/badge/works%20with-omp%20%C2%B7%20Claude%20Code%20%C2%B7%20Codex-ff5a3c">
   <img alt="Node 22.18 or newer" src="https://img.shields.io/badge/node-%3E%3D22.18-43853d">
 </p>
@@ -81,7 +81,7 @@ Market Blaster is its own code. Its only publishing dependency is [Crosspost](ht
 | No duplicate posts on rerun | ✅ | — | — | — | — | — |
 | Scheduling and analytics | — | — | ✅ | ✅ | ✅ | — |
 | Interface | CLI + agent skill | MCP | Web, API, MCP | Web, API | Web, API, CLI, MCP | CLI, library, MCP |
-| Cost | Free, MIT | MIT, credits for some features | Free and paid tiers | Free for 3 channels, then $6/channel/mo | Free self-hosted (AGPL) or paid | Free, Apache-2.0 |
+| Cost | Free, Apache-2.0 | MIT, credits for some features | Free and paid tiers | Free for 3 channels, then $6/channel/mo | Free self-hosted (AGPL) or paid | Free, Apache-2.0 |
 
 ✅ supported · ◐ partial · — not offered or not documented in [our research](docs/research/existing-skills-and-tools.md)
 (snapshot 2026-11-21). Use a scheduler alongside Market Blaster if you need queues and analytics.
@@ -117,4 +117,4 @@ make docs-serve
 
 ## License
 
-[MIT](LICENSE).
+[Apache-2.0](LICENSE).

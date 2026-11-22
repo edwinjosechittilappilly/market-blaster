@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Turn a shipped feature into grounded, platform-specific posts for DEV, Hashnode, Gist, Bluesky, Mastodon, LinkedIn, X, HN and Reddit.",
   "type": "module",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "private": true,
   "bin": {
     "mblast": "bin/mblast.mjs"
