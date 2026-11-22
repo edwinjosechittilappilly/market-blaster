@@ -64,14 +64,18 @@ and dummy DEV and Bluesky credentials. The final command is a dry run, so it sen
 
 `mblast launch` tracks one-time directory submissions separately from campaigns.
 
-## Why not just use X?
+## How it compares
 
-[Pipepost](https://github.com/MendleM/Pipepost) cross-publishes articles and generates social variants.
-[Typefully](https://typefully.com/), [Postiz](https://postiz.com/) and [Buffer](https://buffer.com/) focus on social
-publishing and scheduling. [Crosspost](https://github.com/humanwhocodes/crosspost) is a CLI, library and MCP for
-posting across networks. Market Blaster starts with a code change and an evidence-linked brief, then keeps drafts,
-terminal approvals and per-destination outcomes in local campaign files. See the
-[tool research](docs/research/existing-skills-and-tools.md) for the comparison and its limits.
+Market Blaster is its own code. Its only publishing dependency is [Crosspost](https://github.com/humanwhocodes/crosspost)
+(Apache-2.0), which handles X and LinkedIn signing. The tools below are alternatives we researched before building:
+
+| Tool | What it does | How Market Blaster differs |
+|---|---|---|
+| [Pipepost](https://github.com/MendleM/Pipepost) | MCP that cross-publishes an existing article | Starts from your code change, not a finished article; reviewable files instead of an MCP-only flow |
+| [Typefully](https://typefully.com/), [Buffer](https://buffer.com/), [Postiz](https://postiz.com/) | Social scheduling | No DEV, Gist or GitHub posting; no evidence-grounded drafts |
+| [Crosspost](https://github.com/humanwhocodes/crosspost) | Posting library and CLI | Used for X and LinkedIn; it has no drafting, approval or duplicate protection |
+
+Details: [tool research](docs/research/existing-skills-and-tools.md).
 
 ## Safety
 
