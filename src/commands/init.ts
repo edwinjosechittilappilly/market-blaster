@@ -18,6 +18,7 @@ brand:
 
 # API destinations publish directly; handoff destinations print copy and a compose link.
 destinations: [devto, gist, bluesky, mastodon, linkedin, x, hn, reddit]
+# Optional: add github-discussion, nostr, lemmy or newsletter to destinations.
 
 # The original article URL search engines should credit: devto, hashnode, or your own blog URL.
 canonicalHome: devto
@@ -36,6 +37,16 @@ hashnode:
   publicationId: ""     # needs a Hashnode Pro publication
 gist:
   public: true
+# githubDiscussion:
+#   repo: owner/name
+#   category: Announcements
+# nostr:
+#   relays: [wss://relay.damus.io, wss://nos.lol, wss://relay.nostr.band]
+# lemmy:
+#   instance: programming.dev
+#   community: programming
+# newsletter:
+#   targets: [console-dev, javascript-weekly, golang-weekly, changelog-news]
 bluesky:
   host: bsky.social
 mastodon:
@@ -53,7 +64,7 @@ substack:
 const ENV_DOC: Record<string, string> = {
   DEV_API_KEY: "https://dev.to/settings/extensions -> DEV Community API Keys",
   HASHNODE_TOKEN: "https://hashnode.com/settings/developer (publication must be Pro)",
-  GITHUB_TOKEN: "optional: falls back to `gh auth token` (needs gist scope)",
+  GITHUB_TOKEN: "optional: falls back to `gh auth token` (gist scope or repository Discussions write permission)",
   BLUESKY_IDENTIFIER: "your handle, e.g. you.bsky.social",
   BLUESKY_APP_PASSWORD: "https://bsky.app/settings/app-passwords",
   BLUESKY_HOST: "optional PDS host, default bsky.social",
@@ -64,6 +75,7 @@ const ENV_DOC: Record<string, string> = {
   X_API_SECRET: "consumer secret",
   X_ACCESS_TOKEN: "user access token (read+write)",
   X_ACCESS_SECRET: "user access token secret",
+  NOSTR_PRIVATE_KEY: "Nostr private key (keep secret; never share it)",
 };
 
 export const run: Command = async (_args, io) => {

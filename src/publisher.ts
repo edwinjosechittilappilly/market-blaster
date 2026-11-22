@@ -21,8 +21,9 @@ function publishedUrls(state: CampaignState): Partial<Record<DestinationId, stri
   for (const [id, entry] of Object.entries(state)) if (entry.status === "published" && entry.url && isDestinationId(id)) urls[id] = entry.url;
   return urls;
 }
-const usesCanonical = (id: DestinationId) => ["devto", "hashnode", "hn", "reddit"].includes(id);
-function resolved(draft: Draft, config: Config, state: CampaignState, pending: boolean): ResolvedPost {
+/** Destinations that link to (and so depend on) the canonical home: article canonical fields, HN/Reddit links, Discussions. */
+const usesCanonical = (id: DestinationId) => ["devto", "hashnode", "hn", "reddit", "github-discussion"].includes(id);
+export function resolved(draft: Draft, config: Config, state: CampaignState, pending: boolean): ResolvedPost {
   const urls: Record<string, string> = { ...publishedUrls(state) };
   if (pending) for (const id of config.destinations) if (!urls[id]) urls[id] = `<pending:${id}>`;
   const home = config.canonicalHome;

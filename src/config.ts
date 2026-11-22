@@ -63,6 +63,16 @@ export function validateConfig(raw: unknown, root: string): Config {
   const agent = obj(data.agent);
   const command = Array.isArray(agent.command) ? agent.command.map(String) : ["omp", "-p"];
   if (command.length === 0) throw new UserError(`${CONFIG_FILE}: agent.command must not be empty`);
+  const nostr = obj(data.nostr);
+  const newsletter = obj(data.newsletter);
+  const targets = newsletter.targets ?? [];
+  const allowedTargets = ["console-dev", "javascript-weekly", "golang-weekly", "changelog-news"];
+  if (!Array.isArray(targets) || targets.some((target) => typeof target !== "string" || !allowedTargets.includes(target))) {
+    throw new UserError(`${CONFIG_FILE}: newsletter.targets contains an unknown target`);
+  }
+  if (nostr.relays !== undefined && (!Array.isArray(nostr.relays) || nostr.relays.some((relay) => typeof relay !== "string" || !/^wss:\/\//.test(relay)))) {
+    throw new UserError(`${CONFIG_FILE}: nostr.relays must be a list of wss URLs`);
+  }
 
   return {
     root,
@@ -77,6 +87,10 @@ export function validateConfig(raw: unknown, root: string): Config {
     devto: obj(data.devto),
     hashnode: obj(data.hashnode),
     gist: obj(data.gist),
+    githubDiscussion: obj(data.githubDiscussion),
+    nostr: { relays: (nostr.relays as string[] | undefined) ?? ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.nostr.band"] },
+    lemmy: obj(data.lemmy),
+    newsletter: { targets: targets as Config["newsletter"]["targets"] },
     bluesky: obj(data.bluesky),
     mastodon: obj(data.mastodon),
     linkedin: obj(data.linkedin),

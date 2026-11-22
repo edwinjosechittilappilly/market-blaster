@@ -4,19 +4,24 @@ export const DESTINATION_IDS = [
   "devto",
   "hashnode",
   "gist",
+  "github-discussion",
   "bluesky",
   "mastodon",
   "linkedin",
   "x",
+  "nostr",
   "hn",
   "reddit",
   "threads",
   "medium",
   "producthunt",
   "substack",
+  "lemmy",
+  "newsletter",
 ] as const;
 
 export type DestinationId = (typeof DESTINATION_IDS)[number];
+export type NewsletterTarget = "console-dev" | "javascript-weekly" | "golang-weekly" | "changelog-news";
 export type DestinationKind = "article" | "social" | "handoff";
 
 export interface BrandConfig {
@@ -40,6 +45,10 @@ export interface Config {
   agent: { command: string[]; timeoutSeconds: number };
   devto: { tags?: string[]; publish?: boolean };
   hashnode: { publicationId?: string };
+  githubDiscussion: { repo?: string; category?: string };
+  nostr: { relays: string[] };
+  lemmy: { instance?: string; community?: string };
+  newsletter: { targets: NewsletterTarget[] };
   gist: { public?: boolean };
   bluesky: { host?: string; langs?: string[] };
   /** `maxChars`: the instance's status limit; the adapter reads it from the instance at preflight. */
@@ -99,7 +108,7 @@ export interface Ctx {
   timeoutMs: number;
   /** Runs a command and returns stdout; used for `gh auth token`. Injected for tests. */
   run?: (cmd: string, args: string[]) => Promise<string>;
-  crosspost?: (id: "x" | "linkedin", env: Env) => { post(text: string, options: { signal: AbortSignal }): Promise<unknown>; getUrlFromResponse(response: never): string };
+  crosspost?: (id: "x" | "linkedin" | "nostr", env: Env) => { post(text: string, options: { signal: AbortSignal }): Promise<unknown>; getUrlFromResponse?(response: never): string };
 }
 
 export interface Published {

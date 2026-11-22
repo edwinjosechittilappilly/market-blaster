@@ -20,13 +20,32 @@ NOT overwrite an existing `market-blaster.yml`.
 - **WHEN** `mblast init` runs and `market-blaster.yml` already exists
 - **THEN** the file is unchanged and the command says it was kept
 
-### Requirement: Credentials come only from the environment
-The system SHALL read credentials from environment variables, loading `.env` from the project root for `doctor` and
-`publish` only, with shell values taking precedence. Credentials SHALL NOT appear in drafts, state or output.
+### Requirement: Credentials come from the shell, project .env or the macOS Keychain
+The system SHALL resolve each credential from, in order, the shell environment, the project `.env`, and the macOS
+Keychain (service `market-blaster`), only for `doctor`, `auth list` and `publish`. Credentials SHALL NOT appear in
+drafts, state or output.
 
-#### Scenario: Value in both places
-- **WHEN** `DEV_API_KEY` is set in the shell and in `.env`
-- **THEN** the shell value is used
+#### Scenario: Value in several places
+- **WHEN** `DEV_API_KEY` is set in the shell, in `.env` and in the Keychain
+- **THEN** the shell value is used, and without the shell value the `.env` value is used
+
+#### Scenario: Keychain only
+- **WHEN** `DEV_API_KEY` exists only in the Keychain
+- **THEN** `doctor` reports devto `api` with source `keychain`
+
+### Requirement: Auth commands
+`mblast auth set <KEY>` SHALL store a known credential in the Keychain from hidden input or `--stdin`; `mblast auth
+list` SHALL show each known key's source without its value; `mblast auth linkedin` SHALL run LinkedIn's
+authorization-code flow through a `http://localhost:8723/callback` loopback, verify `state`, and store the access
+token and its issue date.
+
+#### Scenario: Unknown key
+- **WHEN** `mblast auth set FOO` runs
+- **THEN** it exits 1 and lists the known keys
+
+#### Scenario: LinkedIn token ageing
+- **WHEN** the stored LinkedIn token was issued 51 days ago
+- **THEN** `doctor` warns to run `mblast auth linkedin`
 
 #### Scenario: Secrets never echoed
 - **WHEN** a publish fails with an API error

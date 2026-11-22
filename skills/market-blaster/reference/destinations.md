@@ -9,6 +9,9 @@ Technical article with an example and context. Title required, maximum 250 chara
 ## gist
 Only a runnable example grounded in the brief, with minimal instructions. Title required; otherwise write a skip file with a reason.
 
+## github-discussion
+Discussion draft with a clear title and context for repository participants; include the canonical link where relevant.
+
 ## bluesky
 Concrete hook plus code or before/after; one link. Maximum 300 graphemes.
 
@@ -20,6 +23,9 @@ Outcome in the first two lines, link at the end, at most three hashtags. Avoid '
 
 ## x
 Concrete hook plus code or before/after; one link. Maximum 280 weighted characters.
+
+## nostr
+Concise standalone update with useful context and a link.
 
 ## hn
 No AI-written text or draft. The human submits the canonical article.
@@ -38,3 +44,9 @@ Bullet talking points only, with a self-promotion disclosure reminder. The human
 
 ## substack
 Reader-focused newsletter note with technical substance. Title required.
+
+## lemmy
+Bullet talking points only. Check community rules and disclose self-promotion; the human writes the post. Title required.
+
+## newsletter
+Bullet talking points only, tailored to each editor's audience and submission criteria. The human writes and submits each suggestion.

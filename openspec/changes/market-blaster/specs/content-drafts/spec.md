@@ -16,10 +16,15 @@ and `canonical`. The body follows the frontmatter.
 - **WHEN** `drafts/devto.md` has `destination: devto`, `title`, `evidence: [E1]` and a body
 - **THEN** `mblast check` accepts it
 
-### Requirement: Headless AI drafting without secrets
-`mblast draft <slug>` SHALL run `agent.command` once with a prompt containing the skill, brand config and the brief
-fenced as untrusted data, in an environment limited to an allowlist that excludes every credential variable, and SHALL
-report which enabled destinations have drafts. Existing drafts SHALL be kept unless `--force`.
+### Requirement: Headless AI drafting in an isolated workspace
+`mblast draft <slug>` SHALL run `agent.command` once inside a fresh temporary workspace that holds only the brief, the
+brand settings, the skill and an empty `drafts/`, with an environment allowlist that excludes every credential and a
+timeout (`agent.timeoutSeconds`, default 900). Only valid `drafts/<enabled-id>.md` files SHALL be copied back.
+Existing drafts SHALL be kept unless `--force`.
+
+#### Scenario: Agent cannot see the project
+- **WHEN** the agent lists its working directory
+- **THEN** it sees no project files and no `.env`, and files it writes outside `drafts/` are not copied back
 
 #### Scenario: Agent writes drafts
 - **WHEN** `mblast draft search` runs with a configured agent command
@@ -33,14 +38,27 @@ report which enabled destinations have drafts. Existing drafts SHALL be kept unl
 - **WHEN** the campaign has no `brief.md`
 - **THEN** the command exits 1 telling the user to run `mblast brief` first
 
+### Requirement: AI policy per destination
+Each destination SHALL carry an AI policy: `draft` (AI writes a first draft), `outline` (AI writes talking points
+only; nothing is prefilled or copied) or `none` (no draft; HN is built from the canonical article's URL and title
+because HN forbids generated text and automated posting). A draft MAY set `skip: <reason>` to decline a destination.
+
+#### Scenario: HN needs no draft
+- **WHEN** `hn` is enabled and there is no `drafts/hn.md`
+- **THEN** `check` reports no error for hn
+
+#### Scenario: Skipped gist
+- **WHEN** `drafts/gist.md` has `skip: "no runnable example in the brief"`
+- **THEN** check passes for gist and publish prints `gist: skipped (no runnable example in the brief)`
+
 ### Requirement: Skill rules
 The `market-blaster` skill SHALL require facts only from the brief or brand config, an `evidence` list per draft, no
-invented numbers, users or benchmarks, no gist or hn draft unless the brief has a runnable example, and SHALL give a
-section for each supported destination.
+invented numbers, users or benchmarks, SHALL follow each destination's AI policy, and SHALL give guidance for every
+supported destination.
 
 #### Scenario: Skill content
-- **WHEN** the skill file is read
-- **THEN** it states the grounding rule and has a section for every destination id
+- **WHEN** the skill and its destination reference are read
+- **THEN** they state the grounding rule and cover every destination id
 
 ### Requirement: Check validates drafts
 `mblast check <slug>` SHALL report per draft: missing required frontmatter, unknown evidence anchors, length over the

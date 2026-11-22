@@ -1,4 +1,4 @@
-import { TwitterStrategy, LinkedInStrategy } from "@humanwhocodes/crosspost";
+import { TwitterStrategy, LinkedInStrategy, NostrStrategy } from "@humanwhocodes/crosspost";
 import { measureBody, URL_RE } from "../limits.ts";
 import { HttpError } from "../types.ts";
 import type { Ctx, Destination } from "../types.ts";
@@ -7,20 +7,24 @@ import { xIntent, linkedinShare } from "./handoffs.ts";
 import { requestJson, redactAdapter } from "./http.ts";
 
 type Strategy = NonNullable<Ctx["crosspost"]> extends (...args: never[]) => infer S ? S : never;
-function strategy(id: "x" | "linkedin", ctx: Ctx): Strategy {
+function strategy(id: "x" | "linkedin" | "nostr", ctx: Ctx): Strategy {
   return ctx.crosspost ? ctx.crosspost(id, ctx.env) : (id === "x"
     ? new TwitterStrategy({ accessTokenKey: ctx.env.X_ACCESS_TOKEN!, accessTokenSecret: ctx.env.X_ACCESS_SECRET!, apiConsumerKey: ctx.env.X_API_KEY!, apiConsumerSecret: ctx.env.X_API_SECRET! })
-    : new LinkedInStrategy({ accessToken: ctx.env.LINKEDIN_ACCESS_TOKEN! })) as unknown as Strategy;
+    : id === "nostr"
+      ? new NostrStrategy({ privateKey: ctx.env.NOSTR_PRIVATE_KEY!, relays: ctx.config.nostr.relays })
+      : new LinkedInStrategy({ accessToken: ctx.env.LINKEDIN_ACCESS_TOKEN! })) as unknown as Strategy;
 }
 
-async function create(id: "x" | "linkedin", text: string, ctx: Ctx) {
+async function create(id: "x" | "linkedin" | "nostr", text: string, ctx: Ctx) {
   const client = strategy(id, ctx);
   const { promise: timeout, reject } = Promise.withResolvers<never>();
   const timer = setTimeout(() => reject(new DOMException("Crosspost timed out", "TimeoutError")), ctx.timeoutMs);
   try {
     const response = await Promise.race([client.post(text, { signal: AbortSignal.timeout(ctx.timeoutMs) }), timeout]);
     const result = response as { data?: { id?: string }; id?: string };
-    return { id: String(result.data?.id ?? result.id), url: client.getUrlFromResponse(response as never) };
+    const postId = String(result.data?.id ?? result.id);
+    const url = client.getUrlFromResponse?.(response as never) || (id === "nostr" ? `https://njump.me/${postId}` : "");
+    return { id: postId, url };
   } catch (error) {
     const e = error as { code?: unknown; requestError?: unknown; message?: string };
     if (typeof e.code === "number" && e.code >= 100 && e.code <= 599) throw new HttpError(e.code, `${id} ${e.code}: ${redactAdapter(e.message ?? "", ctx, id)}`);
@@ -54,4 +58,11 @@ export const linkedin: Destination = {
   async verify(ctx) {
     await requestJson(ctx, "linkedin", "https://api.linkedin.com/v2/userinfo", { headers: { authorization: `Bearer ${ctx.env.LINKEDIN_ACCESS_TOKEN ?? ""}` } });
   },
+};
+
+export const nostr: Destination = {
+  id: "nostr", kind: "social", env: META.nostr.env,
+  limit: (text, ctx) => measureBody("nostr", text, ctx.config),
+  payload: (post) => ({ text: post.body }),
+  create: (post, ctx) => create("nostr", post.body, ctx),
 };

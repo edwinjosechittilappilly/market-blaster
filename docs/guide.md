@@ -210,12 +210,38 @@ Each line of output shows a status and a URL.
 
 ### Handoffs
 
-For HN, Reddit and similar platforms, `publish` prints the final text and a compose link. With `--open` it also
-opens the link and copies the text to the clipboard. Once you've posted, record it:
+Use `--assist` in a terminal to walk through unpublished handoffs in order:
+
+```bash
+mblast publish search-filters --assist
+mblast publish search-filters --assist --only hn,reddit
+```
+
+For draft-allowed destinations, approve the draft first; assist shows and copies the resolved text. For outline
+destinations it shows talking points but copies nothing: write the submission yourself. HN receives only a title and
+link; write any text yourself, since HN forbids generated text and automated posting. Assist opens official compose
+pages in your browser; you paste and submit manually. Paste each resulting HTTPS permalink to record it, press Enter
+to skip, or `s` to stop. A custom Substack host requires confirmation. For newsletter targets, assist opens each
+configured editorial page and records one permalink for the newsletter destination.
+
+You can also record an outcome separately:
 
 ```bash
 mblast mark search-filters hn --url https://news.ycombinator.com/item?id=123
 ```
+
+### Launch directories
+
+Project listings are one-time submissions, not posts for every campaign. Check eligibility and submit manually:
+
+```bash
+mblast launch
+mblast launch --mark devhunt --url https://devhunt.org/tool/example
+mblast launch
+```
+
+The checklist tracks DevHunt, AlternativeTo, Uneed, Indie Hackers and Product Hunt in
+`campaigns/_launch.json` (under your configured `campaignsDir`). Listings and editorial approval are not guaranteed.
 
 ### Status
 

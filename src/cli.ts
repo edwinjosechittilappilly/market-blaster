@@ -8,6 +8,7 @@ import { run as doctor } from "./commands/doctor.ts";
 import { run as draft } from "./commands/draft.ts";
 import { run as init } from "./commands/init.ts";
 import { run as installSkill } from "./commands/install-skill.ts";
+import { run as launch } from "./commands/launch.ts";
 import { run as mark } from "./commands/mark.ts";
 import { run as newCampaign } from "./commands/new.ts";
 import { run as publish } from "./commands/publish.ts";
@@ -25,10 +26,11 @@ const COMMANDS: Record<string, { summary: string; run: Command }> = {
   check: { summary: "validate drafts: check <slug> [--strict]", run: check },
   approve: { summary: "review and approve drafts (interactive): approve <slug> [--only a,b]", run: approve },
   publish: {
-    summary: "publish approved drafts: publish <slug> [--yes] [--stage] [--only a,b] [--force] [--open]",
+    summary: "publish approved drafts: publish <slug> [--yes] [--stage] [--only a,b] [--force] [--open] [--assist]",
     run: publish,
   },
   mark: { summary: "record a manual outcome: mark <slug> <destination> --url U | --not-posted", run: mark },
+  launch: { summary: "show project launch checklist or record a listing: launch [--mark <directory> --url U]", run: launch },
   status: { summary: "show what was published where: status <slug>", run: status },
   "install-skill": { summary: "link the drafting skill into ~/.agents/skills and ~/.claude/skills", run: installSkill },
 };
