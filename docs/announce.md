@@ -23,6 +23,22 @@ mblast check search-filters
 
 The drafting agent runs as your user. Its temporary workspace and filtered environment are not a security sandbox; use a suitable sandbox supported by your agent if needed.
 
+## Import a Blast Studio campaign
+
+Export a campaign in Blast Studio, then import the resulting archive from your configured project:
+
+```bash
+bstudio export my-feature
+mblast import my-feature.campaign.zip
+```
+
+Use `--slug another-name` to choose a different campaign directory. Enabled destinations in the package become drafts;
+enabled destinations absent from the package receive a skip. The summary lists destinations that are not enabled and
+the `market-blaster.yml` entries to add, as well as manual platforms. The brief, sources, media, handoffs and review
+artifacts are copied into the campaign. Import runs `check` after writing. Existing approved drafts are protected;
+`--force` replaces them and clears their approvals. Version 1 Studio export directories also remain supported:
+`mblast import path/to/export-directory`.
+
 ## Review and approve
 
 Edit the Markdown drafts yourself. Frontmatter identifies the destination and evidence anchors; some destinations require a title. `{{url:devto}}` refers to the published DEV URL and is resolved during publishing. Review claims and links, not just validation output.

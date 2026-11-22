@@ -1,13 +1,15 @@
 import { createHash } from "node:crypto";
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { stringify } from "yaml";
+import { parse, stringify } from "yaml";
+import { extractCampaignZip } from "../campaign-zip.ts";
 import { checkCampaign } from "../check.ts";
 import { campaignDir, loadConfig } from "../config.ts";
-import { draftPath } from "../drafts.ts";
-import type { Command } from "../io.ts";
-import { loadManifest, packageFile } from "../manifest.ts";
+import { draftPath, parseDraft } from "../drafts.ts";
+import type { Command, IO } from "../io.ts";
+import { loadCampaignManifest, loadManifest, packageFile } from "../manifest.ts";
 import { loadState, saveState, withStateLock } from "../state.ts";
 import { UserError } from "../types.ts";
 
@@ -15,8 +17,15 @@ export const run: Command = async (args, io) => {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
     slug: { type: "string" }, force: { type: "boolean" },
   } });
-  if (positionals.length !== 1) throw new UserError("usage: mblast import <dir> [--slug s] [--force]");
+  if (positionals.length !== 1) throw new UserError("usage: mblast import <dir|file.zip> [--slug s] [--force]");
   const root = resolve(io.cwd, positionals[0]);
+  if (!statSync(root).isDirectory()) {
+    const temp = mkdtempSync(join(tmpdir(), "mblast-import-"));
+    try {
+      extractCampaignZip(root, temp);
+      return await importCampaignZip(temp, io, values.slug, values.force);
+    } finally { rmSync(temp, { recursive: true, force: true }); }
+  }
   const manifest = loadManifest(root);
   const config = loadConfig(io.cwd);
   const campaign = campaignDir(config, values.slug ?? manifest.slug);
@@ -76,3 +85,71 @@ export const run: Command = async (args, io) => {
     return errors ? 1 : 0;
   });
 };
+
+async function importCampaignZip(root: string, io: IO, slug: string | undefined, force: boolean | undefined): Promise<number> {
+  const manifest = loadCampaignManifest(root);
+  const config = loadConfig(io.cwd);
+  const campaign = campaignDir(config, slug ?? manifest.slug);
+  const brief = readFileSync(packageFile(root, "brief.md"), "utf8");
+  const enabled = new Set(config.destinations);
+  const imported = manifest.destinations.filter((d) => enabled.has(d.id));
+  const unavailable = manifest.destinations.filter((d) => !enabled.has(d.id));
+  const skipped = config.destinations.filter((id) => !manifest.destinations.some((d) => d.id === id));
+  const prepared = imported.map((d) => {
+    for (const media of d.media) {
+      if (!media.path.startsWith("media/")) throw new UserError(`invalid media path: ${media.path}`);
+      packageFile(root, media.path);
+      if (media.captions) {
+        if (!media.captions.startsWith("media/")) throw new UserError(`invalid captions path: ${media.captions}`);
+        packageFile(root, media.captions);
+      }
+    }
+    if (d.thread) packageFile(root, d.thread);
+    if (!d.post) return { id: d.id, text: `---\n${stringify({ destination: d.id, title: manifest.title })}---\n` };
+    const source = packageFile(root, d.post);
+    const text = readFileSync(source, "utf8");
+    const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+    if (!match) throw new UserError(`${d.post}: missing YAML frontmatter`);
+    let front: unknown;
+    try { front = parse(match[1]); } catch (err) { throw new UserError(`${d.post}: invalid frontmatter: ${(err as Error).message}`); }
+    if (!front || typeof front !== "object" || Array.isArray(front)) throw new UserError(`${d.post}: invalid frontmatter`);
+    const output = `---\n${stringify({ ...front, destination: d.id, media: d.media,
+      ...(d.review ? { studio: { reviewHash: d.review.reviewHash, verdict: d.review.verdict } } : {}) })}---\n${match[2]}`;
+    parseDraft(d.post, output);
+    return { id: d.id, text: output };
+  });
+  return withStateLock(campaign, async () => {
+    const state = loadState(campaign);
+    const approved = config.destinations.filter((id) => state[id]?.approvedHash);
+    if (approved.length && !force) throw new UserError(`approved drafts would be overwritten: ${approved.join(", ")}; use --force`);
+    if (approved.length) {
+      for (const id of approved) delete state[id]!.approvedHash;
+      saveState(campaign, state);
+    }
+    writeFileSync(join(campaign, "brief.md"), brief);
+    for (const folder of ["sources", "media", "handoff", "review"]) {
+      const source = join(root, folder);
+      if (existsSync(source)) cpSync(source, join(campaign, folder), { recursive: true });
+    }
+    for (const item of prepared) {
+      const path = draftPath(campaign, item.id);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, item.text);
+    }
+    for (const id of skipped) {
+      const path = draftPath(campaign, id);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, `---\n${stringify({ destination: id, skip: "not planned in studio" })}---\n`);
+    }
+    const { findings } = checkCampaign(config, campaign);
+    for (const f of findings) io.out(`${f.destination}  ${f.level}  ${f.message}`);
+    const errors = findings.filter((f) => f.level === "error").length;
+    io.out(`${errors} error(s), ${findings.length - errors} warning(s)`);
+    io.out(`Imported: ${imported.map((d) => d.id).join(", ") || "none"}`);
+    io.out(`Skipped: ${skipped.join(", ") || "none"}`);
+    io.out(`Not enabled: ${unavailable.map((d) => d.id).join(", ") || "none"}`);
+    for (const d of unavailable) io.out(`  Add to market-blaster.yml destinations: - ${d.id}`);
+    io.out(`Manual: ${manifest.manual.map((m) => m.platform).join(", ") || "none"}`);
+    return errors ? 1 : 0;
+  });
+}

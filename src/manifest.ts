@@ -12,6 +12,19 @@ export interface StudioPost {
 }
 export interface StudioManifest { version: 1; slug: string; generatedAt: string; brief: "brief.md"; posts: StudioPost[] }
 
+export interface CampaignDestination {
+  id: DestinationId; mode: "api" | "handoff"; aiPolicy: string; post: string | null;
+  media: StudioMedia[]; thread: string | null;
+  review: { verdict: string; total: number | null; reviewHash: string } | null;
+}
+export interface CampaignManifest {
+  version: 2; kind: "blast-studio-campaign"; slug: string; title: string; generatedAt: string;
+  generator: { name: string; version: string }; canonicalHome: string | null;
+  sources: { anchor: string; title: string; status: string; url?: string | null }[];
+  destinations: CampaignDestination[];
+  manual: { platform: string; folder: string; review: { verdict: string; total: number | null } | null }[];
+}
+
 export function reviewHash(post: { title?: string; body: string; media: StudioMedia[] }): string {
   return createHash("sha256").update(`${post.title ?? ""}\n---\n${post.body.trim()}\n---\n${post.media.map((m) => `${basename(m.path)}|${m.alt.trim()}`).join("\n")}`).digest("hex");
 }
@@ -61,4 +74,42 @@ export function loadManifest(root: string): StudioManifest {
     seen.add(post.destination);
   }
   return value as unknown as StudioManifest;
+}
+
+export function loadCampaignManifest(root: string): CampaignManifest {
+  let value: unknown;
+  try { value = JSON.parse(readFileSync(packageFile(root, "campaign.json"), "utf8")); }
+  catch (err) { throw new UserError(`invalid campaign manifest: ${(err as Error).message}`); }
+  const review = (r: unknown, hash: boolean) => r === null || (object(r)
+    && typeof r.verdict === "string" && (r.total === null || (typeof r.total === "number" && Number.isFinite(r.total) && r.total >= 0 && r.total <= 100))
+    && (!hash || (typeof r.reviewHash === "string" && /^[a-f0-9]{64}$/.test(r.reviewHash))));
+  const media = (m: unknown) => object(m) && typeof m.path === "string" && !!m.path
+    && typeof m.alt === "string" && ["image", "video", "gif", "document"].includes(String(m.kind))
+    && (m.cover === undefined || typeof m.cover === "boolean")
+    && (m.lang === undefined || (typeof m.lang === "string" && /^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/.test(m.lang)))
+    && (m.captions === undefined || (m.kind === "video" && typeof m.captions === "string" && /\.vtt$/i.test(m.captions)));
+  if (!object(value) || value.version !== 2 || value.kind !== "blast-studio-campaign"
+    || typeof value.slug !== "string" || !/^[a-z0-9][a-z0-9-]*$/.test(value.slug)
+    || typeof value.title !== "string" || typeof value.generatedAt !== "string" || !Number.isFinite(Date.parse(value.generatedAt))
+    || !object(value.generator) || typeof value.generator.name !== "string" || typeof value.generator.version !== "string"
+    || (value.canonicalHome !== null && typeof value.canonicalHome !== "string")
+    || !Array.isArray(value.sources) || value.sources.some((s: unknown) => !object(s) || typeof s.anchor !== "string"
+      || typeof s.title !== "string" || typeof s.status !== "string" || (s.url !== undefined && s.url !== null && typeof s.url !== "string"))
+    || !Array.isArray(value.destinations) || !Array.isArray(value.manual)) throw new UserError("invalid campaign manifest fields");
+  const seen = new Set<string>();
+  for (const d of value.destinations) {
+    if (!object(d) || typeof d.id !== "string" || !isDestinationId(d.id) || seen.has(d.id)
+      || !["api", "handoff"].includes(String(d.mode)) || typeof d.aiPolicy !== "string"
+      || (d.post !== null && (typeof d.post !== "string" || !d.post))
+      || !Array.isArray(d.media) || d.media.some((m: unknown) => !media(m))
+      || (d.thread !== null && (typeof d.thread !== "string" || !d.thread))
+      || !review(d.review, true)) throw new UserError("invalid campaign destination");
+    seen.add(d.id);
+  }
+  for (const m of value.manual) {
+    if (!object(m) || typeof m.platform !== "string" || !m.platform
+      || typeof m.folder !== "string" || !m.folder.startsWith("handoff/") || !review(m.review, false))
+      throw new UserError("invalid campaign manual platform");
+  }
+  return value as unknown as CampaignManifest;
 }

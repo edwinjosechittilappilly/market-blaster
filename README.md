@@ -44,6 +44,8 @@ mblast publish my-feature --assist               # complete handoffs and record 
 mblast status my-feature
 ```
 
+Already using Blast Studio? Import a complete campaign with `mblast import my-feature.campaign.zip` ([guide](docs/announce.md#import-a-blast-studio-campaign)).
+
 `--assist` opens official pages for you to submit; it does not click Post. The example below uses a fake drafting agent
 and dummy DEV and Bluesky credentials. The final command is a dry run, so it sends nothing.
 

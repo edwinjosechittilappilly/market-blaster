@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@humanwhocodes/crosspost": "1.0.4",
+    "fflate": "0.8.3",
     "yaml": "^2.8.1"
   },
   "devDependencies": {
