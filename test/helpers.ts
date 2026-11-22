@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { IO } from "../src/io.ts";
@@ -15,9 +15,14 @@ agent:
   command: [node, fake-agent.mjs]
 `;
 
+// Each test file runs in its own process; remove its temp projects when it exits.
+const created: string[] = [];
+process.on("exit", () => { for (const dir of created) rmSync(dir, { recursive: true, force: true }); });
+
 /** A temp directory with the given files (paths relative to it). */
 export function tempProject(files: Record<string, string> = { "market-blaster.yml": BASIC_CONFIG }): string {
   const dir = mkdtempSync(join(tmpdir(), "mblast-"));
+  created.push(dir);
   for (const [path, content] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), content);
